@@ -1,0 +1,66 @@
+linters-settings:
+    funlen:
+        lines: 120
+        statements: 100
+    gci:
+        sections:
+            - standard
+            - default
+    godox:
+        keywords:
+            - FIXME
+            - BUG
+linters:
+    enable:
+        - bodyclose
+        - copyloopvar
+        - dogsled
+        - dupl
+        - errcheck
+        - errorlint
+        - exhaustive
+        - forbidigo
+        - funlen
+        - gci
+        - gochecknoinits
+        - gocognit
+        - goconst
+        - gocritic
+        - godot
+        - godox
+        - gofmt
+        - goheader
+        - goimports
+        - gomoddirectives
+        - gomodguard
+        - goprintffuncname
+        - gosec
+        - gosimple
+        - govet
+        - importas
+        - ineffassign
+        - ireturn
+        - makezero
+        - misspell
+        - nakedret
+        - nestif
+        - nilnil
+        - nlreturn
+        - nolintlint
+        - predeclared
+        - promlinter
+        - revive
+        - rowserrcheck
+        - staticcheck
+        - stylecheck
+        - tenv
+        - testpackage
+        - thelper
+        - typecheck
+        - unconvert
+        - unparam
+        - unused
+        - wastedassign
+        - whitespace
+        - wrapcheck
+        - wsl
