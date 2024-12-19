@@ -62,7 +62,7 @@ func WithCORS(allowedOrigins []string) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 			for _, allowed := range allowedOrigins {
-				if origin == allowed {
+				if origin == allowed || allowed == "*" {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 
 					break
