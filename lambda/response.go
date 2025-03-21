@@ -69,7 +69,7 @@ func (r *ProxyResponseWriter) Write(body []byte) (int, error) {
 
 	n, err := (&r.body).Write(body)
 	if err != nil {
-		return n, fmt.Errorf("%w", err)
+		return n, fmt.Errorf("failed to write response body: %w", err)
 	}
 
 	return n, nil

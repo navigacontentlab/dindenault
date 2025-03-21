@@ -1,4 +1,4 @@
-package didenault
+package dindenault
 
 import (
 	"context"
@@ -58,6 +58,15 @@ func WithMiddleware(m ...Middleware) Option {
 	}
 }
 
+// pathMatches checks if a request path matches a registered service path.
+func (a *App) pathMatches(requestPath, servicePath string) bool {
+	// Case-insensitive path prefix matching
+	return strings.HasPrefix(
+		strings.ToLower(requestPath),
+		strings.ToLower(servicePath),
+	)
+}
+
 // Handle returns a Lambda handler function.
 func (a *App) Handle() func(context.Context, lambda.Request) (lambda.Response, error) {
 	// Apply middlewares to all handlers
@@ -73,6 +82,13 @@ func (a *App) Handle() func(context.Context, lambda.Request) (lambda.Response, e
 
 	return func(ctx context.Context, event lambda.Request) (lambda.Response, error) {
 		req, err := lambda.AWSRequestToHTTPRequest(ctx, event)
+		if err != nil {
+			a.logger.Error("Failed to create HTTP request", "error", err)
+			return lambda.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       "Failed to create request: " + err.Error(),
+			}, nil
+		}
 
 		var attr []slog.Attr
 		attr = append(attr, slog.String("Method", req.Method))
@@ -87,21 +103,24 @@ func (a *App) Handle() func(context.Context, lambda.Request) (lambda.Response, e
 
 		a.logger.Debug("GeneratedHTTPRequest", args...)
 
-		if err != nil {
-			return lambda.Response{
-				StatusCode: http.StatusInternalServerError,
-				Body:       "Failed to create request",
-			}, nil
-		}
-
 		w := lambda.NewProxyResponseWriter()
 
 		// Find and execute handler
 		for _, reg := range a.registrations {
-			if strings.HasPrefix(event.Path, reg.Path) {
+			a.logger.Debug("Handle:", "reg.Path", reg.Path)
+
+			if a.pathMatches(event.Path, reg.Path) {
 				reg.Handler.ServeHTTP(w, req)
 
-				return w.GetLambdaResponse()
+				resp, err := w.GetLambdaResponse()
+				if err != nil {
+					a.logger.Error("Failed to get lambda response", "error", err)
+					return lambda.Response{
+						StatusCode: http.StatusInternalServerError,
+						Body:       "Internal server error: " + err.Error(),
+					}, nil
+				}
+				return resp, nil
 			}
 		}
 

@@ -82,7 +82,7 @@ func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request,
 
 	p, err := url.PathUnescape(u.RawPath)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("failed to unescape path %q: %w", u.RawPath, err)
 	}
 
 	u.Path = p
@@ -98,7 +98,7 @@ func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request,
 
 	req, err := http.NewRequest(HTTPMethod, u.String(), body)
 	if err != nil {
-		return nil, fmt.Errorf("could not convert to request: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request for method %s and URL %s: %w", HTTPMethod, u.String(), err)
 	}
 
 	req.RequestURI = u.RequestURI()
