@@ -1,3 +1,4 @@
+version: "2"
 linters-settings:
     funlen:
         lines: 120
@@ -9,8 +10,9 @@ linters-settings:
     godox:
         keywords:
             - FIXME
-            - BUG
 linters:
+    disable:
+        - gci
     enable:
         - bodyclose
         - copyloopvar
@@ -21,7 +23,6 @@ linters:
         - exhaustive
         - forbidigo
         - funlen
-        - gci
         - gochecknoinits
         - gocognit
         - goconst
