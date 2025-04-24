@@ -8,7 +8,7 @@
 //   - Permission checking
 //   - Telemetry (logging, tracing, metrics)
 //   - CORS support
-//   - Compression
+//   - Integration with Connect's native compression
 //
 // # Architecture
 //
@@ -21,16 +21,23 @@
 //
 // Create a new App with options:
 //
+//	// Create your service implementation
+//	impl := service.NewServiceImpl()
+//
+//	// Create Connect handler with compression and other options
+//	path, handler := servicev1connect.NewServiceHandler(
+//	    impl,
+//	    connect.WithCompressMinBytes(1024), // Enable compression
+//	)
+//
+//	// Create app with the handler and global interceptors
 //	app := dindenault.New(logger,
-//	    dindenault.WithName("my-service"),
-//	    dindenault.WithVersion("1.0.0"),
+//	    dindenault.WithSecureService(path, handler, []string{"service:access"}),
 //	    dindenault.WithInterceptors(
 //	        dindenault.LoggingInterceptors(logger),
 //	        dindenault.XRayInterceptors("my-service"),
-//	        dindenault.AuthInterceptors("https://imas.example.com", []string{"service:read"}),
+//	        dindenault.AuthInterceptors("https://imas.example.com", []string{}),
 //	    ),
-//	    dindenault.WithService("my-service/", myHandler),
-//	    dindenault.WithCORS("/", []string{"https://app.example.com"}),
 //	)
 //
 // Then start the Lambda handler:
@@ -57,7 +64,6 @@ type App struct {
 	logger             *slog.Logger
 	globalInterceptors []connect.Interceptor
 	telemetryOptions   *telemetry.Options
-	config             *Config
 }
 
 // GlobalInterceptors returns the list of global interceptors for testing.
@@ -72,16 +78,13 @@ type Registration struct {
 }
 
 // New creates a new App with the given options.
-func New(logger *slog.Logger, opts ...Option) *App {
-	config := &Config{}
-	config.Logger = logger
-
+func New(logger *slog.Logger, options ...Option) *App {
 	app := &App{
 		logger: logger,
-		config: config,
 	}
 
-	for _, opt := range opts {
+	// Apply options
+	for _, opt := range options {
 		opt(app)
 	}
 

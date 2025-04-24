@@ -1,18 +1,21 @@
 package dindenault
 
 import (
-	"connectrpc.com/connect"
 	"context"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"go.opentelemetry.io/otel/attribute"
 	"log/slog"
 	"net/http"
+
+	"connectrpc.com/connect"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/navigacontentlab/dindenault/internal/cors"
 	"github.com/navigacontentlab/dindenault/internal/interceptors"
 	"github.com/navigacontentlab/dindenault/internal/telemetry"
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
+
+type Option func(*App)
 
 // WithInterceptors adds multiple connect interceptors at once.
 //
@@ -196,6 +199,15 @@ func WithConnectService(
 	handler http.Handler,
 ) Option {
 	return WithService(path, handler)
+}
+
+func WithService(path string, handler http.Handler) Option {
+	return func(a *App) {
+		a.registrations = append(a.registrations, Registration{
+			Path:    path,
+			Handler: handler,
+		})
+	}
 }
 
 // WithSecureService adds a Connect RPC service with permissions.

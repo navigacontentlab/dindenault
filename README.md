@@ -6,6 +6,7 @@ Dindenault provides a framework for building Connect RPC services in AWS Lambda.
 
 - [Features](#features)
 - [Getting Started](#getting-started)
+- [Working with Connect Handlers](#working-with-connect-handlers)
 - [Interceptor Architecture](#interceptor-architecture)
 - [Authentication with Naviga ID](#authentication-with-naviga-id)
 - [Response Compression](#response-compression)
@@ -28,24 +29,20 @@ Dindenault provides a framework for building Connect RPC services in AWS Lambda.
 ### Basic Implementation
 
 ```go
-import "github.com/navigacontentlab/dindenault"
+import (
+    "github.com/navigacontentlab/dindenault"
+    "connectrpc.com/connect"
+)
 
 app := dindenault.New(logger,
-    // Set application info
-    dindenault.WithName("my-service"),
+    // Register a standard service
+    dindenault.WithService("api/", myServiceHandler),
     
-    // Add all cross-cutting concerns in one call
+    // Add global interceptors for cross-cutting concerns
     dindenault.WithInterceptors(
         dindenault.LoggingInterceptors(logger),
         dindenault.XRayInterceptors("my-service"),
         dindenault.AuthInterceptors("https://imas.example.com", []string{"service:read"}),
-    ),
-    
-    // Register services with automatic compression
-    dindenault.WithCompressedService(
-        rpcconnect.ServiceHandler(myService),
-        "api/",
-        1024, // Compress responses larger than 1KB
     ),
 )
 
@@ -53,35 +50,17 @@ app := dindenault.New(logger,
 lambda.Start(app.Handle())
 ```
 
-### With Secure and Compressed Services
+### With Secure Services
 
-For services requiring authentication, permissions, and compression:
+For services requiring authentication and permissions:
 
 ```go
 app := dindenault.New(logger,
-    dindenault.WithName("my-service"),
-    dindenault.WithVersion("1.0.0"),
-    
     // Standard secure service with permissions
     dindenault.WithSecureService(
         "admin/",
-        rpcconnect.AdminServiceHandler(adminService),
+        adminServiceHandler,
         []string{"admin:access"},
-    ),
-    
-    // Service with standard compression (1KB threshold)
-    dindenault.WithCompressedService(
-        "api/",
-        rpcconnect.ApiServiceHandler(apiService),
-        1024,
-    ),
-    
-    // Service with both permissions and custom compression (5KB threshold)
-    dindenault.WithSecureCompressedService(
-        "content/",
-        rpcconnect.ContentServiceHandler(contentService),
-        []string{"content:read", "content:write"},
-        5120, // 5KB compression threshold
     ),
     
     // Add standard features (logging, tracing, telemetry)
@@ -89,6 +68,92 @@ app := dindenault.New(logger,
 )
 
 lambda.Start(app.Handle())
+```
+
+## Working with Connect Handlers
+
+Dindenault is designed to work seamlessly with Connect's generated handlers. Here are the recommended practices:
+
+### Creating Connect Handlers
+
+When creating Connect handlers, you can apply options directly during handler creation:
+
+```go
+import (
+    "connectrpc.com/connect"
+    "yourpackage/servicev1connect"
+)
+
+// Create your service implementation
+impl := service.NewServiceImpl()
+
+// Create Connect handler with options applied directly
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithCompressMinBytes(1024), // Compression threshold
+    connect.WithInterceptors(customInterceptor),
+)
+
+// Add the handler to your app
+app := dindenault.New(logger,
+    dindenault.WithService(path, handler),
+)
+```
+
+### Applying Compression
+
+The recommended way to enable compression for Connect handlers is to apply it directly when creating the handler:
+
+```go
+// Apply compression when creating the handler
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithCompressMinBytes(1024), // Compress responses larger than 1KB
+)
+```
+
+This approach uses Connect's native compression system, which:
+- Compresses responses based on the client's `Accept-Encoding` header
+- Only compresses responses larger than the specified threshold
+- Properly handles content negotiation and all compression headers
+
+### Combining Security and Compression
+
+For handlers requiring both security features and compression:
+
+```go
+// Create handler with compression
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithCompressMinBytes(1024),
+)
+
+// Apply security (permissions) through dindenault
+app := dindenault.New(logger,
+    dindenault.WithSecureService(path, handler, []string{"service:access"}),
+)
+```
+
+### Creating Handlers with Multiple Options
+
+For more complex configurations, you can combine multiple options:
+
+```go
+// Create Connect handler with multiple options
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithCompressMinBytes(1024),
+    connect.WithInterceptors(
+        yourCustomInterceptor,
+        anotherInterceptor,
+    ),
+    connect.WithCodec(connect.NewJSONCodec()),
+)
+
+// Register with dindenault
+app := dindenault.New(logger,
+    dindenault.WithSecureService(path, handler, []string{"service:access"}),
+)
 ```
 
 ## Interceptor Architecture
@@ -122,10 +187,32 @@ For convenience, you can also use `WithDefaultServices()` to add logging and tra
 ```go
 app := dindenault.New(logger,
     dindenault.WithName("my-service"),
-    dindenault.WithVersion("1.0.0"),
     dindenault.WithDefaultServices(),
 )
 ```
+
+### Global vs. Handler-Specific Interceptors
+
+You can apply interceptors at two levels:
+
+1. **Global interceptors** applied to all services:
+   ```go
+   app := dindenault.New(logger,
+       dindenault.WithInterceptors(
+           dindenault.LoggingInterceptors(logger),
+       ),
+   )
+   ```
+
+2. **Handler-specific interceptors** applied when creating the handler:
+   ```go
+   path, handler := servicev1connect.NewServiceHandler(
+       impl,
+       connect.WithInterceptors(
+           specificInterceptor,
+       ),
+   )
+   ```
 
 ### Interceptor Chaining
 
@@ -208,23 +295,37 @@ func (s *Service) YourMethod(ctx context.Context, req *connect.Request<api.YourR
 
 ## Response Compression
 
-Dindenault provides efficient response compression using Connect's built-in compression support:
+Dindenault enables response compression through Connect's native compression capabilities. 
+
+### Recommended Approach
+
+The recommended way to enable compression is to apply it directly when creating the Connect handler:
 
 ```go
-// Add a service with compression (responses larger than 1KB will be compressed)
-dindenault.WithCompressedService(
-    myServiceHandler,
-    "myservice/", 
-    1024
+// Create handler with compression enabled
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithCompressMinBytes(1024), // 1KB threshold
+)
+
+// Register with dindenault
+app := dindenault.New(logger,
+    dindenault.WithService(path, handler),
 )
 ```
 
-Connect's built-in compression automatically:
-- Compresses responses based on the client's `Accept-Encoding` header
+This approach uses Connect's built-in compression system which:
+- Automatically handles content negotiation via the `Accept-Encoding` header
 - Only compresses responses larger than the specified threshold
-- Handles all compression headers and encoding details
+- Supports multiple compression algorithms (gzip, deflate, br)
+- Properly manages all compression-related headers
 
-Benefits include reduced bandwidth usage, faster response times, and better performance for clients on slower connections.
+### Testing Compression with HTTP Clients
+
+To test compression with an HTTP client like Postman:
+1. Add a header: `Accept-Encoding: gzip, deflate, br`
+2. Send a request that would generate a response larger than your threshold
+3. Check the response headers for `Content-Encoding: gzip` (or other algorithm)
 
 ## CORS Support
 
@@ -232,7 +333,10 @@ CORS support is provided through both interceptors and preflight request handler
 
 ```go
 // Add CORS support
-dindenault.WithCORS("/", []string{"https://app.example.com"})
+dindenault.WithCORSInterceptor("/", cors.Options{
+    AllowedDomains: []string{"https://app.example.com"},
+    AllowHTTP: false, // Require HTTPS for security
+})
 ```
 
 This automatically:
