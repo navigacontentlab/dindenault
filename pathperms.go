@@ -139,7 +139,7 @@ func WithPathPermissionService(
 // the ConnectHandlerWithInterceptor interface.
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
-func PathInterceptor(logger *slog.Logger, configs []PathPermissionConfig) connect.Interceptor {
+func PathInterceptors(logger *slog.Logger, configs []PathPermissionConfig) connect.Interceptor {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			// Get the request path
