@@ -18,21 +18,11 @@ func ConnectInterceptor(logger *slog.Logger, jwks *JWKS) connect.Interceptor {
 
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Extract the authorization header from the request metadata
-			authHeader := ""
-			if reqMetadata := req.Header().Get("Authorization"); reqMetadata != "" {
-				authHeader = reqMetadata
-			}
-
-			// Process the token
-			var accessToken string
-			if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
-				accessToken = strings.TrimPrefix(authHeader, "Bearer ")
-			}
+			// Try to extract token from multiple possible headers
+			accessToken := extractAccessToken(req)
 
 			if accessToken == "" {
 				logger.Info("no access token in request")
-
 				return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 			}
 
@@ -58,6 +48,23 @@ func ConnectInterceptor(logger *slog.Logger, jwks *JWKS) connect.Interceptor {
 			return next(newCtx, req)
 		}
 	})
+}
+
+// extractAccessToken tries to extract the access token from various headers
+// to maintain compatibility with panurge.
+func extractAccessToken(req connect.AnyRequest) string {
+	// First try Authorization header (standard)
+	authHeader := req.Header().Get("Authorization")
+	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+		return strings.TrimPrefix(authHeader, "Bearer ")
+	}
+
+	imidToken := req.Header().Get("x-imid-token")
+	if imidToken != "" {
+		return imidToken
+	}
+
+	return ""
 }
 
 // RequirePermission returns an interceptor that checks

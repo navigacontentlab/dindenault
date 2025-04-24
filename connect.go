@@ -91,15 +91,11 @@ func AuthInterceptors(imasURL string, requiredPermissions []string) connect.Inte
 	interceptorsList := []connect.Interceptor{
 		// Add base authentication interceptor
 		navigaid.ConnectInterceptor(logger, jwks),
-		// Always include the 'authenticated' permission check
-		navigaid.RequirePermission(logger, "authenticated"),
 	}
 
 	// Add any additional required permissions
 	for _, permission := range requiredPermissions {
-		if permission != "authenticated" { // Avoid duplicate if already included
-			interceptorsList = append(interceptorsList, navigaid.RequirePermission(logger, permission))
-		}
+		interceptorsList = append(interceptorsList, navigaid.RequirePermission(logger, permission))
 	}
 
 	// If there's only one interceptor, return it directly
