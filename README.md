@@ -271,7 +271,91 @@ app := dindenault.New(logger,
 
 ### Accessing Authentication in Services
 
-Once authenticated, you can access the authentication information in your service:
+Once authenticated, you can access the authentication information in your service using several convenient methods:
+
+#### Using Convenience Helper Functions (Recommended)
+
+```go
+import "github.com/navigacontentlab/dindenault"
+
+func (s *Service) YourMethod(ctx context.Context, req *connect.Request<api.YourRequest>) (*connect.Response<api.YourResponse>, error) {
+    // Get organization directly
+    organization := dindenault.OrganizationFromContext(ctx)
+    if organization == "" {
+        return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("not authenticated"))
+    }
+    
+    // Get user information
+    givenName, familyName := dindenault.UserFromContext(ctx)
+    email := dindenault.EmailFromContext(ctx)
+    
+    // Check permissions
+    if !dindenault.HasPermission(ctx, "service:access") {
+        return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("permission denied"))
+    }
+    
+    // Continue with your implementation
+    // ...
+}
+```
+
+#### Using AuthorizeWithDetails for Permission Check and User Details
+
+```go
+import "github.com/navigacontentlab/dindenault"
+
+func (s *Service) YourMethod(ctx context.Context, req *connect.Request<api.YourRequest>) (*connect.Response<api.YourResponse>, error) {
+    // Get auth details and check permission in one call
+    authResult, err := dindenault.AuthorizeWithDetails(ctx, "service:access") 
+    if err != nil {
+        return nil, err // Error is already properly formatted with connect.NewError
+    }
+    
+    // Now you have access to all user details
+    organization := authResult.Organization
+    userFullName := fmt.Sprintf("%s %s", authResult.GivenName, authResult.FamilyName)
+    email := authResult.Email
+    userId := authResult.UserID
+    
+    // Access permissions and groups if needed
+    userPermissions := authResult.Permissions
+    userGroups := authResult.Groups
+    
+    // Log access for auditing
+    s.logger.Info("Access granted",
+        "user", userFullName,
+        "userId", userId,
+        "organization", organization)
+    
+    // Continue with your implementation
+    // ...
+}
+```
+
+#### Using GetAuthResultFromContext Without Permission Check
+
+```go
+import "github.com/navigacontentlab/dindenault"
+
+func (s *Service) YourMethod(ctx context.Context, req *connect.Request<api.YourRequest>) (*connect.Response<api.YourResponse>, error) {
+    // Get auth details without permission check
+    authResult, err := dindenault.GetAuthResultFromContext(ctx)
+    if err != nil {
+        return nil, connect.NewError(connect.CodeUnauthenticated, err)
+    }
+    
+    // Use auth details
+    organization := authResult.Organization
+    userFullName := fmt.Sprintf("%s %s", authResult.GivenName, authResult.FamilyName)
+    
+    // Continue with your implementation
+    // ...
+}
+```
+
+#### Using Raw navigaid Access (Legacy Method)
+
+For more advanced scenarios or legacy code, you can still access the raw authentication data:
 
 ```go
 import "github.com/navigacontentlab/dindenault/navigaid"
