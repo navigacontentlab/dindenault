@@ -190,16 +190,6 @@ type ConnectHandlerWithInterceptor interface {
 	WithInterceptors(...connect.Interceptor) http.Handler
 }
 
-// ConnectHandlerWithCompression is an interface for Connect handlers that support compression.
-type ConnectHandlerWithCompression interface {
-	WithCompressMinBytes(threshold int) http.Handler
-}
-
-// ConnectHandlerWithOptions is an interface for Connect handlers that support Connect's native options.
-type ConnectHandlerWithOptions interface {
-	WithOptions(...connect.HandlerOption) http.Handler
-}
-
 // WithConnectService adds a Connect service with authentication.
 func WithConnectService(
 	path string,
