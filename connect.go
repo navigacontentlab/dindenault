@@ -1,13 +1,12 @@
 package dindenault
 
 import (
-	"context"
-	"log/slog"
-	"net/http"
-
 	"connectrpc.com/connect"
+	"context"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"go.opentelemetry.io/otel/attribute"
+	"log/slog"
+	"net/http"
 
 	"github.com/navigacontentlab/dindenault/internal/cors"
 	"github.com/navigacontentlab/dindenault/internal/interceptors"
@@ -259,84 +258,6 @@ func WithSecureService(path string, handler http.Handler, permissions []string) 
 					"path", path,
 					"permissions", permissions)
 			}
-		}
-
-		// Register the service
-		WithService(path, serviceHandler)(a)
-
-		a.logger.Info("Registered service", "path", path)
-	}
-}
-
-// WithSecureCompressedService adds a Connect RPC service with permissions and compression.
-// It allows configuring both the permission requirements and compression threshold.
-//
-// Parameters:
-// - path: The URL path prefix where the service will be registered
-// - handler: The HTTP handler for the Connect service
-// - permissions: Optional slice of permission strings (can be nil or empty)
-// - minBytes: Minimum size in bytes for responses to be compressed (0 means use default 1024)
-//
-// Example:
-//
-//	// Secure service with compression (5KB threshold)
-//	app := dindenault.New(logger,
-//	    dindenault.WithSecureCompressedService(
-//	        "api/",
-//	        apiHandler,
-//	        []string{"api:access"},
-//	        5120,
-//	    ),
-//	)
-func WithSecureCompressedService(path string, handler http.Handler, permissions []string, minBytes int) Option {
-	return func(a *App) {
-		// Start with original handler
-		serviceHandler := handler
-
-		// Add permission requirements if:
-		// 1. Permissions are specified (non-nil and non-empty)
-		// 2. Handler supports interceptors
-		if len(permissions) > 0 {
-			if interceptorHandler, ok := handler.(ConnectHandlerWithInterceptor); ok {
-				// Create interceptors with permissions
-				var permInterceptors []connect.Interceptor
-
-				for _, permission := range permissions {
-					permInterceptors = append(
-						permInterceptors,
-						navigaid.RequirePermission(a.logger, permission),
-					)
-				}
-
-				// Apply interceptors
-				serviceHandler = interceptorHandler.WithInterceptors(permInterceptors...)
-
-				a.logger.Info("Added permission requirements to service",
-					"path", path,
-					"permissions", permissions)
-			} else {
-				a.logger.Warn("Handler does not support interceptors, permissions will be ignored",
-					"path", path,
-					"permissions", permissions)
-			}
-		}
-
-		// Determine compression threshold
-		threshold := minBytes
-		if threshold <= 0 {
-			threshold = 1024 // Default to 1KB
-		}
-
-		// Try to apply compression using Connect's native interface
-		if optionsHandler, ok := serviceHandler.(ConnectHandlerWithOptions); ok {
-			serviceHandler = optionsHandler.WithOptions(connect.WithCompressMinBytes(threshold))
-
-			a.logger.Debug("Added compression using Connect's native options",
-				"path", path,
-				"threshold_bytes", threshold)
-		} else {
-			a.logger.Warn("Handler does not support Connect compression", "path", path)
-			a.logger.Info("To enable compression with Connect handlers, pass connect.WithCompressMinBytes() when creating the handler")
 		}
 
 		// Register the service
