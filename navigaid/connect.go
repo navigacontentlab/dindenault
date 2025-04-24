@@ -23,6 +23,7 @@ func ConnectInterceptor(logger *slog.Logger, jwks *JWKS) connect.Interceptor {
 
 			if accessToken == "" {
 				logger.Info("no access token in request")
+
 				return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 			}
 
