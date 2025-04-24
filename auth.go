@@ -97,13 +97,13 @@ func GetAuthResultFromContext(ctx context.Context) (*AuthResult, error) {
 
 // OrganizationFromContext retrieves the organization from the context.
 // Returns an empty string if no authentication information is available.
-func OrganizationFromContext(ctx context.Context) string {
+func OrganizationFromContext(ctx context.Context) (string, error) {
 	auth, err := navigaid.GetAuth(ctx)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to get organization: %w", err)
 	}
 
-	return auth.Claims.Org
+	return auth.Claims.Org, nil
 }
 
 // UserFromContext retrieves user information (first and last name) from the context.
