@@ -196,6 +196,11 @@ type ConnectHandlerWithCompression interface {
 	WithCompressMinBytes(threshold int) http.Handler
 }
 
+// ConnectHandlerWithOptions is an interface for Connect handlers that support Connect's native options.
+type ConnectHandlerWithOptions interface {
+	WithOptions(...connect.HandlerOption) http.Handler
+}
+
 // WithConnectService adds a Connect service with authentication.
 func WithConnectService(
 	path string,
@@ -316,21 +321,22 @@ func WithSecureCompressedService(path string, handler http.Handler, permissions 
 			}
 		}
 
-		// Apply compression if the handler supports it
-		if compressHandler, ok := serviceHandler.(ConnectHandlerWithCompression); ok {
-			// Use provided threshold or default to 1024 bytes (1KB)
-			threshold := minBytes
-			if threshold <= 0 {
-				threshold = 1024
-			}
+		// Determine compression threshold
+		threshold := minBytes
+		if threshold <= 0 {
+			threshold = 1024 // Default to 1KB
+		}
 
-			serviceHandler = compressHandler.WithCompressMinBytes(threshold)
+		// Try to apply compression using Connect's native interface
+		if optionsHandler, ok := serviceHandler.(ConnectHandlerWithOptions); ok {
+			serviceHandler = optionsHandler.WithOptions(connect.WithCompressMinBytes(threshold))
 
-			a.logger.Debug("Added compression to service",
+			a.logger.Debug("Added compression using Connect's native options",
 				"path", path,
 				"threshold_bytes", threshold)
 		} else {
 			a.logger.Warn("Handler does not support Connect compression", "path", path)
+			a.logger.Info("To enable compression with Connect handlers, pass connect.WithCompressMinBytes() when creating the handler")
 		}
 
 		// Register the service
