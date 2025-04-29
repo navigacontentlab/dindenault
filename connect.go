@@ -25,7 +25,7 @@ type Option func(*App)
 //		dindenault.WithInterceptors(
 //			dindenault.LoggingInterceptors(logger),
 //			dindenault.XRayInterceptors("my-service"),
-//			dindenault.AuthInterceptors("https://imas.example.com", []string{"service:read"}),
+//			dindenault.AuthInterceptors(logger, "https://imas.example.com"),
 //		),
 //	)
 func WithInterceptors(interceptorsList ...connect.Interceptor) Option {
@@ -75,36 +75,16 @@ func CORSInterceptors(allowedOrigins []string, allowHTTP bool) connect.Intercept
 //
 // Parameters:
 // - imasURL: The URL of the Naviga ID IMAS service
-// - requiredPermissions: Optional list of permissions to require
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
-func AuthInterceptors(imasURL string, requiredPermissions []string) connect.Interceptor {
+func AuthInterceptors(logger *slog.Logger, imasURL string) connect.Interceptor {
 	if imasURL == "" {
 		panic("imasURL cannot be empty for AuthInterceptors")
 	}
-
 	// Create JWKS for token validation
 	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL))
 
-	logger := slog.Default()
-
-	interceptorsList := []connect.Interceptor{
-		// Add base authentication interceptor
-		navigaid.ConnectInterceptor(logger, jwks),
-	}
-
-	// Add any additional required permissions
-	for _, permission := range requiredPermissions {
-		interceptorsList = append(interceptorsList, navigaid.RequirePermission(logger, permission))
-	}
-
-	// If there's only one interceptor, return it directly
-	if len(interceptorsList) == 1 {
-		return interceptorsList[0]
-	}
-
-	// Create a chain of interceptors manually
-	return chainInterceptors(interceptorsList...)
+	return navigaid.ConnectInterceptor(logger, jwks)
 }
 
 // ConnectOptions configures Connect RPC services.
@@ -435,15 +415,15 @@ func WithTelemetryAttributes(attrs ...attribute.KeyValue) Option {
 // chainInterceptors chains multiple interceptors into a single interceptor.
 // This is a replacement for connect.ChainInterceptors for older versions of the library.
 //
-//nolint:ireturn // Returns connect.Interceptor interface as intended
-func chainInterceptors(interceptors ...connect.Interceptor) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		// Apply interceptors in reverse order
-		// Last interceptor is executed first, then the second-to-last, and so on
-		for i := len(interceptors) - 1; i >= 0; i-- {
-			next = interceptors[i].WrapUnary(next)
-		}
 
-		return next
-	})
-}
+// func chainInterceptors(interceptors ...connect.Interceptor) connect.Interceptor {
+//	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+//		// Apply interceptors in reverse order
+//		// Last interceptor is executed first, then the second-to-last, and so on
+//		for i := len(interceptors) - 1; i >= 0; i-- {
+//			next = interceptors[i].WrapUnary(next)
+//		}
+//
+//		return next
+//	})
+//}

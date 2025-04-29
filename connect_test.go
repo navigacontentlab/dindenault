@@ -78,8 +78,7 @@ func TestAuthInterceptors(t *testing.T) {
 	}
 
 	// Create the interceptor
-	permissions := []string{"test:permission"}
-	interceptor := dindenault.AuthInterceptors("https://imas.example.com", permissions)
+	interceptor := dindenault.AuthInterceptors(slog.Default(), "https://imas.example.com")
 
 	// Assert it's not nil
 	if interceptor == nil {

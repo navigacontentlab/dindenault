@@ -42,7 +42,7 @@ app := dindenault.New(logger,
     dindenault.WithInterceptors(
         dindenault.LoggingInterceptors(logger),
         dindenault.XRayInterceptors("my-service"),
-        dindenault.AuthInterceptors("https://imas.example.com", []string{"service:read"}),
+        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
 )
 
@@ -166,7 +166,7 @@ Dindenault's architecture is built around Connect interceptors. All cross-cuttin
 - **`XRayInterceptors(name)`**: Adds AWS X-Ray tracing
 - **`OpenTelemetryInterceptors(name)`**: Adds OpenTelemetry tracing
 - **`CORSInterceptors(allowedOrigins, allowHTTP)`**: Adds CORS support
-- **`AuthInterceptors(imasURL, permissions)`**: Adds Naviga ID authentication and permission checks
+- **`AuthInterceptors(logger, imasURL)`**: Adds Naviga ID authentication
 
 ### Using Interceptors
 
@@ -177,7 +177,7 @@ app := dindenault.New(logger,
     dindenault.WithInterceptors(
         dindenault.LoggingInterceptors(logger),
         dindenault.XRayInterceptors("my-service"),
-        dindenault.AuthInterceptors("https://imas.example.com", []string{"service:read"}),
+        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
 )
 ```
@@ -219,7 +219,6 @@ You can apply interceptors at two levels:
 The `AuthInterceptors` function creates a chain of interceptors:
 1. Base authentication interceptor
 2. "authenticated" permission check
-3. Additional permission checks from the provided permissions list
 
 This ensures that authentication is always validated before permissions.
 
@@ -234,7 +233,7 @@ The simplest approach is using `AuthInterceptors`:
 ```go
 app := dindenault.New(logger,
     dindenault.WithInterceptors(
-        dindenault.AuthInterceptors("https://imas.example.com", []string{"service:read"}),
+        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
     dindenault.WithService("service/", serviceHandler),
 )

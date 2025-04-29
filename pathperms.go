@@ -91,7 +91,7 @@ func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 //	app := dindenault.New(logger,
 //	    // Add authentication interceptor
 //	    dindenault.WithInterceptors(
-//	        dindenault.AuthInterceptors("https://imas.example.com", []string{}),
+//	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
 //	    ),
 //	    // Register service with path-specific permissions
 //	    dindenault.WithPathPermissionService(

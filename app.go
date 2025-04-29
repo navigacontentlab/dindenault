@@ -36,7 +36,7 @@
 //	    dindenault.WithInterceptors(
 //	        dindenault.LoggingInterceptors(logger),
 //	        dindenault.XRayInterceptors("my-service"),
-//	        dindenault.AuthInterceptors("https://imas.example.com", []string{}),
+//	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
 //	    ),
 //	)
 //

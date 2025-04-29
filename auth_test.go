@@ -59,12 +59,20 @@ func TestOrganizationFromContext(t *testing.T) {
 	ctx := createAuthContext()
 
 	// Test that it extracts the organization
-	org := da.OrganizationFromContext(ctx)
+	org, err := da.OrganizationFromContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	assert.Equal(t, "test-org", org)
 
 	// Test with empty context
-	emptyOrg := da.OrganizationFromContext(context.Background())
-	assert.Equal(t, "", emptyOrg)
+	_, err = da.OrganizationFromContext(context.Background())
+	if err != nil {
+		return
+	}
+
+	t.Fail()
 }
 
 func TestUserFromContext(t *testing.T) {
