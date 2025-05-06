@@ -88,10 +88,10 @@ func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 //
 // Example:
 //
-//	app := dindenault.New(logger,
+//	app := dindenault.New(Logger,
 //	    // Add authentication interceptor
 //	    dindenault.WithInterceptors(
-//	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
+//	        dindenault.AuthInterceptors(Logger, "https://imas.example.com"),
 //	    ),
 //	    // Register service with path-specific permissions
 //	    dindenault.WithPathPermissionService(
@@ -121,14 +121,14 @@ func WithPathPermissionService(
 		// Create the handler with path-specific permissions
 		permHandler := &PathPermissionHandler{
 			handler:        handler,
-			logger:         a.logger,
+			logger:         a.Logger,
 			configurations: configs,
 		}
 
 		// Register the service
 		WithService(path, permHandler)(a)
 
-		a.logger.Info("Registered service with path-specific permissions",
+		a.Logger.Info("Registered service with path-specific permissions",
 			"path", path,
 			"path_configs", len(configs))
 	}

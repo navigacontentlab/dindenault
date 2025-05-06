@@ -31,12 +31,12 @@
 //	)
 //
 //	// Create app with the handler and global interceptors
-//	app := dindenault.New(logger,
+//	app := dindenault.New(Logger,
 //	    dindenault.WithSecureService(path, handler, []string{"service:access"}),
 //	    dindenault.WithInterceptors(
-//	        dindenault.LoggingInterceptors(logger),
+//	        dindenault.LoggingInterceptors(Logger),
 //	        dindenault.XRayInterceptors("my-service"),
-//	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
+//	        dindenault.AuthInterceptors(Logger, "https://imas.example.com"),
 //	    ),
 //	)
 //
@@ -47,6 +47,7 @@ package dindenault
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -58,12 +59,21 @@ import (
 	"github.com/navigacontentlab/dindenault/internal/telemetry"
 )
 
+type BucketEventHandler interface {
+	HandleEvent(ctx context.Context, event *BucketEvent) error
+}
+type BucketEvent struct {
+	Bucket string `json:"bucket"`
+	Key    string `json:"key"`
+}
+
 // App handles Connect services in Lambda.
 type App struct {
-	registrations      []Registration
-	logger             *slog.Logger
-	globalInterceptors []connect.Interceptor
-	telemetryOptions   *telemetry.Options
+	Registrations       []Registration
+	Logger              *slog.Logger
+	globalInterceptors  []connect.Interceptor
+	TelemetryOptions    *telemetry.Options
+	BucketEventHandlers []BucketEventHandler
 }
 
 // GlobalInterceptors returns the list of global interceptors for testing.
@@ -80,7 +90,7 @@ type Registration struct {
 // New creates a new App with the given options.
 func New(logger *slog.Logger, options ...Option) *App {
 	app := &App{
-		logger: logger,
+		Logger: logger,
 	}
 
 	// Apply options
@@ -102,13 +112,13 @@ func (a *App) pathMatches(requestPath, servicePath string) bool {
 
 // prepareHandlers applies interceptors to all handlers.
 func (a *App) prepareHandlers() {
-	for i, reg := range a.registrations {
+	for i, reg := range a.Registrations {
 		handler := reg.Handler
 
-		// Apply Connect interceptors
+		// Apply the connect interceptors
 		handler = a.applyGlobalInterceptors(handler)
 
-		a.registrations[i].Handler = handler
+		a.Registrations[i].Handler = handler
 	}
 }
 
@@ -126,20 +136,20 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 		args = append(args, a.Key, a.Value.Any())
 	}
 
-	a.logger.Debug("GeneratedHTTPRequest", args...)
+	a.Logger.Debug("GeneratedHTTPRequest", args...)
 
 	w := lambda.NewProxyResponseWriter()
 
 	// Find and execute handler
-	for _, reg := range a.registrations {
-		a.logger.Debug("Handle:", "reg.Path", reg.Path)
+	for _, reg := range a.Registrations {
+		a.Logger.Debug("Handle:", "reg.Path", reg.Path)
 
 		if a.pathMatches(path, reg.Path) {
 			reg.Handler.ServeHTTP(w, req)
 
 			resp, err := w.GetLambdaResponse()
 			if err != nil {
-				a.logger.Error("Failed to get lambda response", "error", err)
+				a.Logger.Error("Failed to get lambda response", "error", err)
 
 				return nil, fmt.Errorf("failed to get lambda response: %w", err)
 			}
@@ -154,9 +164,45 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 	}, nil
 }
 
-// Handle returns a Lambda handler function for ALB events.
-// For backwards compatibility.
-func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (events.ALBTargetGroupResponse, error) {
+func (a *App) HandleMultiple() func(ctx context.Context, raw json.RawMessage) (interface{}, error) {
+	slog.Default().Debug("HandleMultiple")
+
+	albHandler := a.HandleALB()
+	apigatewayHandler := a.HandleAPIGateway()
+
+	return func(ctx context.Context, raw json.RawMessage) (interface{}, error) {
+		// Try ALB
+		slog.Default().Debug("HandleMultiple: Try ALB")
+
+		var albEvent events.ALBTargetGroupRequest
+		if err := json.Unmarshal(raw, &albEvent); err == nil && albEvent.HTTPMethod != "" {
+			return albHandler(ctx, albEvent)
+		}
+
+		// Try S3
+		slog.Default().Debug("HandleMultiple: Try S3")
+
+		var s3Event events.S3Event
+		if err := json.Unmarshal(raw, &s3Event); err == nil && len(s3Event.Records) > 0 {
+			return a.HandleS3()(ctx, s3Event)
+		}
+
+		// Try API Gateway
+		var apigatewayEvent events.APIGatewayV2HTTPRequest
+		if err := json.Unmarshal(raw, &apigatewayEvent); err == nil {
+			return apigatewayHandler(ctx, apigatewayEvent)
+		}
+
+		// Unsupported
+		return events.ALBTargetGroupResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       "Unsupported event type",
+		}, nil
+	}
+}
+
+// HandleALB returns a Lambda handler function for ALB events.
+func (a *App) HandleALB() func(context.Context, events.ALBTargetGroupRequest) (events.ALBTargetGroupResponse, error) {
 	a.prepareHandlers()
 
 	return func(ctx context.Context, event events.ALBTargetGroupRequest) (events.ALBTargetGroupResponse, error) {
@@ -165,7 +211,7 @@ func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (even
 
 		req, err := lambda.AWSRequestToHTTPRequest(ctx, request)
 		if err != nil {
-			a.logger.Error("Failed to create HTTP request", "error", err)
+			a.Logger.Error("Failed to create HTTP request", "error", err)
 
 			return events.ALBTargetGroupResponse{
 				StatusCode: http.StatusInternalServerError,
@@ -192,6 +238,28 @@ func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (even
 	}
 }
 
+func (a *App) HandleS3() func(_ context.Context, event events.S3Event) (interface{}, error) {
+	return func(ctx context.Context, event events.S3Event) (interface{}, error) {
+		for _, record := range event.Records {
+			bucketEvent := &BucketEvent{
+				Bucket: record.S3.Bucket.Name,
+				Key:    record.S3.Object.Key,
+			}
+
+			for _, handler := range a.BucketEventHandlers {
+				if err := handler.HandleEvent(ctx, bucketEvent); err != nil {
+					a.Logger.Error("Error handling bucket event",
+						"error", err,
+						"bucket", bucketEvent.Bucket,
+						"key", bucketEvent.Key)
+				}
+			}
+		}
+
+		return nil, nil
+	}
+}
+
 // HandleAPIGateway returns a Lambda handler function for API Gateway events.
 func (a *App) HandleAPIGateway() func(context.Context, events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	a.prepareHandlers()
@@ -202,7 +270,7 @@ func (a *App) HandleAPIGateway() func(context.Context, events.APIGatewayV2HTTPRe
 
 		req, err := lambda.AWSRequestToHTTPRequest(ctx, request)
 		if err != nil {
-			a.logger.Error("Failed to create HTTP request", "error", err)
+			a.Logger.Error("Failed to create HTTP request", "error", err)
 
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusInternalServerError,

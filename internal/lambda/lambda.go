@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/aws/aws-lambda-go/events"
+	awsevents "github.com/aws/aws-lambda-go/events"
 )
 
 // RequestContext combines the relevant fields from ALB and API Gateway contexts.
@@ -47,7 +47,7 @@ type Request struct {
 }
 
 // FromALBRequest converts an ALB request to a generic Request.
-func FromALBRequest(alb events.ALBTargetGroupRequest) Request {
+func FromALBRequest(alb awsevents.ALBTargetGroupRequest) Request {
 	req := Request{
 		Version:                         "1.0",
 		Path:                            alb.Path,
@@ -66,7 +66,7 @@ func FromALBRequest(alb events.ALBTargetGroupRequest) Request {
 }
 
 // FromAPIGatewayRequest converts an API Gateway request to a generic Request.
-func FromAPIGatewayRequest(apigw events.APIGatewayV2HTTPRequest) Request {
+func FromAPIGatewayRequest(apigw awsevents.APIGatewayV2HTTPRequest) Request {
 	req := Request{
 		Version:         "2.0",
 		Path:            apigw.RawPath,

@@ -21,11 +21,11 @@ type Option func(*App)
 //
 // Example:
 //
-//	app := dindenault.New(logger,
+//	app := dindenault.New(Logger,
 //		dindenault.WithInterceptors(
-//			dindenault.LoggingInterceptors(logger),
+//			dindenault.LoggingInterceptors(Logger),
 //			dindenault.XRayInterceptors("my-service"),
-//			dindenault.AuthInterceptors(logger, "https://imas.example.com"),
+//			dindenault.AuthInterceptors(Logger, "https://imas.example.com"),
 //		),
 //	)
 func WithInterceptors(interceptorsList ...connect.Interceptor) Option {
@@ -179,7 +179,7 @@ func WithConnectService(
 
 func WithService(path string, handler http.Handler) Option {
 	return func(a *App) {
-		a.registrations = append(a.registrations, Registration{
+		a.Registrations = append(a.Registrations, Registration{
 			Path:    path,
 			Handler: handler,
 		})
@@ -197,12 +197,12 @@ func WithService(path string, handler http.Handler) Option {
 // Example:
 //
 //	// Basic service without permission requirements
-//	app := dindenault.New(logger,
+//	app := dindenault.New(Logger,
 //	    dindenault.WithSecureService("hello/", helloHandler, nil),
 //	)
 //
 //	// Service with permission requirements
-//	app := dindenault.New(logger,
+//	app := dindenault.New(Logger,
 //	    dindenault.WithSecureService("secure/", secureHandler, []string{"service:access"}),
 //	)
 func WithSecureService(path string, handler http.Handler, permissions []string) Option {
@@ -221,18 +221,18 @@ func WithSecureService(path string, handler http.Handler, permissions []string) 
 				for _, permission := range permissions {
 					permInterceptors = append(
 						permInterceptors,
-						navigaid.RequirePermission(a.logger, permission),
+						navigaid.RequirePermission(a.Logger, permission),
 					)
 				}
 
 				// Apply interceptors
 				serviceHandler = interceptorHandler.WithInterceptors(permInterceptors...)
 
-				a.logger.Info("Added permission requirements to service",
+				a.Logger.Info("Added permission requirements to service",
 					"path", path,
 					"permissions", permissions)
 			} else {
-				a.logger.Warn("Handler does not support interceptors, permissions will be ignored",
+				a.Logger.Warn("Handler does not support interceptors, permissions will be ignored",
 					"path", path,
 					"permissions", permissions)
 			}
@@ -241,7 +241,7 @@ func WithSecureService(path string, handler http.Handler, permissions []string) 
 		// Register the service
 		WithService(path, serviceHandler)(a)
 
-		a.logger.Info("Registered service", "path", path)
+		a.Logger.Info("Registered service", "path", path)
 	}
 }
 
@@ -261,12 +261,12 @@ func WithCORSInterceptor(path string, opts cors.Options) Option {
 		)
 
 		// Register preflight handler
-		a.registrations = append(a.registrations, Registration{
+		a.Registrations = append(a.Registrations, Registration{
 			Path:    path,
 			Handler: HandleCORSPreflight(opts.AllowedDomains),
 		})
 
-		a.logger.Info("CORS support added",
+		a.Logger.Info("CORS support added",
 			"path", path,
 			"allowed_domains", opts.AllowedDomains,
 			"allow_http", opts.AllowHTTP)
@@ -343,7 +343,7 @@ func (a *App) applyGlobalInterceptors(handler http.Handler) http.Handler {
 	}
 
 	// Otherwise, just return the original handler
-	a.logger.Warn("Handler does not implement ConnectHandlerWithInterceptor, global interceptors not applied",
+	a.Logger.Warn("Handler does not implement ConnectHandlerWithInterceptor, global interceptors not applied",
 		"interceptors", len(a.globalInterceptors))
 
 	return handler
@@ -353,15 +353,15 @@ func (a *App) applyGlobalInterceptors(handler http.Handler) http.Handler {
 func WithTelemetry(logger *slog.Logger) Option {
 	return func(a *App) {
 		// Create default options if none exist
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{
+		if a.TelemetryOptions == nil {
+			a.TelemetryOptions = &telemetry.Options{
 				MetricNamespace: "Dindenault",
 				OrganizationFn:  telemetry.DefaultOrganizationFunction,
 			}
 		}
 
 		// Create a telemetry interceptor for Connect
-		telemetryInterceptor := telemetry.Interceptor(logger, a.telemetryOptions)
+		telemetryInterceptor := telemetry.Interceptor(logger, a.TelemetryOptions)
 
 		// Add the interceptor to global interceptors
 		a.globalInterceptors = append(a.globalInterceptors, telemetryInterceptor)
@@ -371,44 +371,44 @@ func WithTelemetry(logger *slog.Logger) Option {
 // WithTelemetryNamespace sets the CloudWatch namespace for metrics.
 func WithTelemetryNamespace(namespace string) Option {
 	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
+		if a.TelemetryOptions == nil {
+			a.TelemetryOptions = &telemetry.Options{}
 		}
 
-		a.telemetryOptions.MetricNamespace = namespace
+		a.TelemetryOptions.MetricNamespace = namespace
 	}
 }
 
 // WithTelemetryOrganizationFunction sets a custom function to extract organization from context.
 func WithTelemetryOrganizationFunction(fn func(ctx context.Context) string) Option {
 	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
+		if a.TelemetryOptions == nil {
+			a.TelemetryOptions = &telemetry.Options{}
 		}
 
-		a.telemetryOptions.OrganizationFn = fn
+		a.TelemetryOptions.OrganizationFn = fn
 	}
 }
 
 // WithTelemetryAWSSession sets the AWS session for CloudWatch metrics.
 func WithTelemetryAWSSession(sess *session.Session) Option {
 	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
+		if a.TelemetryOptions == nil {
+			a.TelemetryOptions = &telemetry.Options{}
 		}
 
-		a.telemetryOptions.AWSSession = sess
+		a.TelemetryOptions.AWSSession = sess
 	}
 }
 
 // WithTelemetryAttributes adds custom attributes to all metrics.
 func WithTelemetryAttributes(attrs ...attribute.KeyValue) Option {
 	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
+		if a.TelemetryOptions == nil {
+			a.TelemetryOptions = &telemetry.Options{}
 		}
 
-		a.telemetryOptions.MetricAttributes = append(a.telemetryOptions.MetricAttributes, attrs...)
+		a.TelemetryOptions.MetricAttributes = append(a.TelemetryOptions.MetricAttributes, attrs...)
 	}
 }
 

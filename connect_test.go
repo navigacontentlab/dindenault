@@ -8,7 +8,7 @@ import (
 )
 
 func TestWithInterceptors(t *testing.T) {
-	// Create a test logger
+	// Create a test Logger
 	logger := slog.Default()
 
 	// Create a test app
@@ -28,7 +28,7 @@ func TestWithInterceptors(t *testing.T) {
 }
 
 func TestLoggingInterceptors(t *testing.T) {
-	// Create a test logger
+	// Create a test Logger
 	logger := slog.Default()
 
 	// Create the interceptor
