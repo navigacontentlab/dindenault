@@ -155,7 +155,6 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 }
 
 // Handle returns a Lambda handler function for ALB events.
-// For backwards compatibility.
 func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (events.ALBTargetGroupResponse, error) {
 	a.prepareHandlers()
 
