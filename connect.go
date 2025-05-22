@@ -263,7 +263,7 @@ func WithCORSInterceptor(path string, opts cors.Options) Option {
 		// Register preflight handler
 		a.registrations = append(a.registrations, Registration{
 			Path:    path,
-			Handler: HandleCORSPreflight(opts.AllowedDomains),
+			Handler: HandleCORSPreflight(opts.AllowedDomains, opts.AllowHTTP),
 		})
 
 		a.logger.Info("CORS support added",
@@ -275,10 +275,10 @@ func WithCORSInterceptor(path string, opts cors.Options) Option {
 
 // HandleCORSPreflight creates an http.Handler that responds to CORS preflight requests.
 // This should be used in combination with CORSInterceptors to provide complete CORS support.
-func HandleCORSPreflight(allowedOrigins []string) http.Handler {
+func HandleCORSPreflight(allowedOrigins []string, allowHttp bool) http.Handler {
 	return HandleCORSPreflightWithOptions(cors.Options{
 		AllowedDomains: allowedOrigins,
-		AllowHTTP:      false, // Default to HTTPS only for security
+		AllowHTTP:      allowHttp,
 	})
 }
 
@@ -323,6 +323,7 @@ func HandleCORSPreflightWithOptions(opts cors.Options) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
 
 		// Respond with 200 OK
