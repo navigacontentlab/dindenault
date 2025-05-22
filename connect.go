@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/navigacontentlab/dindenault/internal/cors"
+	"github.com/navigacontentlab/dindenault/cors"
 	"github.com/navigacontentlab/dindenault/internal/interceptors"
 	"github.com/navigacontentlab/dindenault/internal/telemetry"
 	"github.com/navigacontentlab/dindenault/navigaid"

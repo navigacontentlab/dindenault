@@ -10,7 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/aws/aws-xray-sdk-go/xray"
-	"github.com/navigacontentlab/dindenault/internal/cors"
+	"github.com/navigacontentlab/dindenault/cors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
