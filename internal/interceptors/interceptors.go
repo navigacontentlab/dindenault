@@ -201,7 +201,8 @@ func CORS(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
 					// Add CORS headers to the error
 					connectErr.Meta().Set("Access-Control-Allow-Origin", origin)
 					connectErr.Meta().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-					connectErr.Meta().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version")
+					connectErr.Meta().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
+					connectErr.Meta().Set("Access-Control-Allow-Credentials", "true")
 				}
 
 				return nil, err
@@ -210,7 +211,8 @@ func CORS(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
 			// Add CORS headers to the response
 			resp.Header().Set("Access-Control-Allow-Origin", origin)
 			resp.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-			resp.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version")
+			resp.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
+			resp.Header().Set("Access-Control-Allow-Credentials", "true")
 
 			return resp, nil
 		}
