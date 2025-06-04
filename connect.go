@@ -245,6 +245,68 @@ func WithSecureService(path string, handler http.Handler, permissions []string) 
 	}
 }
 
+// WithConnectRPCCORSGlobal adds comprehensive CORS support for all Connect RPC services.
+// This automatically handles:
+// 1. CORS headers for all Connect RPC responses
+// 2. OPTIONS preflight requests for all registered Connect services
+// 3. Proper Connect-specific headers
+//
+// This is simpler than WithCORSInterceptor as it doesn't require path specification.
+func WithConnectRPCCORSGlobal(opts cors.Options) Option {
+	return func(a *App) {
+		// If no domains specified, use defaults
+		if len(opts.AllowedDomains) == 0 {
+			opts.AllowedDomains = cors.DefaultDomains()
+		}
+
+		// Add the CORS interceptor for all Connect services
+		a.globalInterceptors = append(
+			a.globalInterceptors,
+			CORSInterceptors(opts.AllowedDomains, opts.AllowHTTP),
+		)
+
+		// Add a catch-all OPTIONS handler that works with Connect RPC
+		a.registrations = append(a.registrations, Registration{
+			Path: "/", // Catch all paths
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Only handle OPTIONS requests
+				if r.Method != http.MethodOptions {
+					// Let other handlers deal with non-OPTIONS requests
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+
+				// Get origin from request
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+
+				// Use the standard validator for consistency
+				originValidator := cors.StandardAllowOriginFunc(opts.AllowHTTP, opts.AllowedDomains)
+				if !originValidator(origin) {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+
+				// Set CORS headers for Connect RPC preflight
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
+
+				w.WriteHeader(http.StatusOK)
+			}),
+		})
+
+		a.logger.Info("Connect RPC CORS support added globally",
+			"allowed_domains", opts.AllowedDomains,
+			"allow_http", opts.AllowHTTP)
+	}
+}
+
 // WithCORSInterceptor adds complete CORS support to the app with custom options.
 // This provides CORS headers for Connect responses and handles OPTIONS preflight requests.
 func WithCORSInterceptor(path string, opts cors.Options) Option {
@@ -411,6 +473,89 @@ func WithTelemetryAttributes(attrs ...attribute.KeyValue) Option {
 
 		a.telemetryOptions.MetricAttributes = append(a.telemetryOptions.MetricAttributes, attrs...)
 	}
+}
+
+// WithConnectServiceCORS wraps a Connect RPC handler with CORS support.
+// This handles both OPTIONS preflight requests and adds CORS headers to responses.
+//
+// Parameters:
+// - path: The Connect service path (e.g., "/article.processor.v1.ArticleProcessorService/")
+// - handler: The Connect RPC handler
+// - allowedOrigins: List of allowed origins (use ["*"] for all origins)
+// - allowHTTP: Whether to allow HTTP origins (set true for development)
+//
+// Example:
+//
+//	path, handler := servicev1connect.NewServiceHandler(impl, options...)
+//	app := dindenault.New(logger,
+//	    dindenault.WithConnectServiceCORS(path, handler, []string{"*"}, true),
+//	)
+func WithConnectServiceCORS(path string, handler http.Handler, allowedOrigins []string, allowHTTP bool) Option {
+	return func(a *App) {
+		// Create CORS wrapper
+		wrappedHandler := createConnectRPCCORSWrapper(handler, allowedOrigins, allowHTTP, a.logger)
+
+		// Register the wrapped handler
+		a.registrations = append(a.registrations, Registration{
+			Path:    path,
+			Handler: wrappedHandler,
+		})
+
+		a.logger.Info("Connect RPC CORS support added",
+			"path", path,
+			"allowed_origins", allowedOrigins,
+			"allow_http", allowHTTP)
+	}
+}
+
+// createConnectRPCCORSWrapper creates an HTTP handler that wraps a Connect RPC handler
+// with CORS support for both preflight OPTIONS requests and actual RPC calls.
+func createConnectRPCCORSWrapper(handler http.Handler, allowedOrigins []string, allowHTTP bool, logger *slog.Logger) http.Handler {
+	// Use the standard CORS origin validator
+	originValidator := cors.StandardAllowOriginFunc(allowHTTP, allowedOrigins)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+
+		// Handle OPTIONS requests (CORS preflight)
+		if r.Method == http.MethodOptions {
+			logger.Debug("Connect RPC CORS: Handling OPTIONS preflight",
+				"path", r.URL.Path,
+				"origin", origin,
+			)
+
+			// Validate origin
+			if origin == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if !originValidator(origin) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+
+			// Set CORS headers for preflight
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
+
+			w.WriteHeader(http.StatusOK)
+			logger.Debug("Connect RPC CORS: OPTIONS response sent", "status", "200")
+			return
+		}
+
+		// For non-OPTIONS requests, add CORS headers and pass to Connect handler
+		if origin != "" && originValidator(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		// Pass to the actual Connect RPC handler
+		handler.ServeHTTP(w, r)
+	})
 }
 
 // chainInterceptors chains multiple interceptors into a single interceptor.

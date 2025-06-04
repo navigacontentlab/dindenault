@@ -130,8 +130,22 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 
 	w := lambda.NewProxyResponseWriter()
 
+	// Sort handlers by path specificity (longer paths first)
+	// This ensures more specific handlers are tried before catch-all handlers
+	sortedRegistrations := make([]Registration, len(a.registrations))
+	copy(sortedRegistrations, a.registrations)
+
+	// Sort by path length (descending) to prioritize more specific paths
+	for i := 0; i < len(sortedRegistrations)-1; i++ {
+		for j := i + 1; j < len(sortedRegistrations); j++ {
+			if len(sortedRegistrations[i].Path) < len(sortedRegistrations[j].Path) {
+				sortedRegistrations[i], sortedRegistrations[j] = sortedRegistrations[j], sortedRegistrations[i]
+			}
+		}
+	}
+
 	// Find and execute handler
-	for _, reg := range a.registrations {
+	for _, reg := range sortedRegistrations {
 		a.logger.Debug("Handle:", "reg.Path", reg.Path)
 
 		if a.pathMatches(path, reg.Path) {
