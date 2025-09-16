@@ -1,13 +1,12 @@
-// Package interceptors provides Connect RPC interceptors for logging and core functionality.
-package interceptors
+// Package xray provides X-Ray tracing interceptors for Connect RPC services.
+package xray
 
 import (
 	"context"
-	"log/slog"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
+	"github.com/aws/aws-xray-sdk-go/xray"
 )
 
 // ExtractServiceAndMethod extracts the service name and method name from a Connect RPC procedure path.
@@ -35,51 +34,32 @@ func ExtractServiceAndMethod(procedure string) (string, string) {
 	return service, method
 }
 
-// Logging creates a Connect interceptor that logs requests with timing information.
+// Interceptor creates a Connect interceptor that adds AWS X-Ray tracing.
 //
 //nolint:ireturn
-func Logging(logger *slog.Logger) connect.Interceptor {
-	logger.Debug("Creating logging interceptor")
-
+func Interceptor(name string) connect.Interceptor {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			// Extract procedure information
 			procedure := req.Spec().Procedure
 			service, method := ExtractServiceAndMethod(procedure)
 
-			// Store start time
-			start := time.Now()
+			// Create a subsegment for this RPC call
+			subCtx, seg := xray.BeginSubsegment(ctx, name+":"+service+"."+method)
+			defer seg.Close(nil)
 
-			// Create log attributes
-			logAttrs := []any{
-				"service", service,
-				"method", method,
-				"procedure", procedure,
-			}
+			// Add procedure information as annotations
+			// Ignore errors as we can't do anything if annotation fails
+			_ = seg.AddAnnotation("rpc.service", service)
+			_ = seg.AddAnnotation("rpc.method", method)
+			_ = seg.AddAnnotation("rpc.procedure", procedure)
 
-			// Extract request ID if present in headers
-			if requestID := req.Header().Get("X-Request-ID"); requestID != "" {
-				logAttrs = append(logAttrs, "request_id", requestID)
-			}
+			// Call the next handler with the X-Ray context
+			resp, err := next(subCtx, req)
 
-			// Log request start
-			logger.Info("Connect RPC request started", logAttrs...)
-
-			// Process the request
-			resp, err := next(ctx, req)
-
-			// Calculate duration
-			duration := time.Since(start)
-
-			// Add duration to log attributes
-			logAttrs = append(logAttrs, "duration_ms", duration.Milliseconds())
-
-			// Add error information if present
+			// If there was an error, record it
 			if err != nil {
-				logAttrs = append(logAttrs, "error", err.Error())
-				logger.Error("Connect RPC request failed", logAttrs...)
-			} else {
-				logger.Info("Connect RPC request completed", logAttrs...)
+				_ = seg.AddError(err)
 			}
 
 			return resp, err

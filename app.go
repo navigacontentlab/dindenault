@@ -4,21 +4,28 @@
 // # Features
 //
 //   - Service registration for Connect RPC handlers
-//   - Authentication with Naviga ID
-//   - Permission checking
-//   - CORS support
+//   - Core logging interceptors
 //   - Integration with Connect's native compression
+//   - Modular architecture with separate packages for auth, CORS, X-Ray, etc.
 //
 // # Architecture
 //
 // The core abstraction is the App, which is configured with options and
-// manages service registration and request routing. Connect interceptors
-// are used for cross-cutting concerns like authentication, logging,
-// tracing, and CORS.
+// manages service registration and request routing. All advanced features
+// like authentication, CORS, X-Ray tracing, and telemetry are available
+// as separate modules that you import as needed.
 //
 // # Usage
 //
 // Create a new App with options:
+//
+//	// Import the modules you need
+//	import (
+//		"github.com/navigacontentlab/dindenault"
+//		"github.com/navigacontentlab/dindenault/navigaid"
+//		"github.com/navigacontentlab/dindenault/xray"
+//		"github.com/navigacontentlab/dindenault/cors"
+//	)
 //
 //	// Create your service implementation
 //	impl := service.NewServiceImpl()
@@ -29,14 +36,18 @@
 //	    connect.WithCompressMinBytes(1024), // Enable compression
 //	)
 //
+//	// Create JWKS for authentication
+//	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint("https://imas.example.com"))
+//
 //	// Create app with the handler and global interceptors
 //	app := dindenault.New(logger,
-//	    dindenault.WithSecureService(path, handler, []string{"service:access"}),
 //	    dindenault.WithInterceptors(
 //	        dindenault.LoggingInterceptors(logger),
-//	        dindenault.XRayInterceptors("my-service"),
-//	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
+//	        xray.Interceptor("my-service"),
+//	        navigaid.ConnectInterceptor(logger, jwks),
+//	        cors.Interceptor([]string{"https://app.example.com"}, false),
 //	    ),
+//	    dindenault.WithService(path, handler),
 //	)
 //
 // Then start the Lambda handler:
@@ -59,7 +70,6 @@ import (
 // App handles Connect services in Lambda.
 type App struct {
 	registrations      []Registration
-	logger             *slog.Logger
 	globalInterceptors []connect.Interceptor
 }
 
@@ -75,10 +85,8 @@ type Registration struct {
 }
 
 // New creates a new App with the given options.
-func New(logger *slog.Logger, options ...Option) *App {
-	app := &App{
-		logger: logger,
-	}
+func New(options ...Option) *App {
+	app := &App{}
 
 	// Apply options
 	for _, opt := range options {
@@ -102,8 +110,12 @@ func (a *App) prepareHandlers() {
 	for i, reg := range a.registrations {
 		handler := reg.Handler
 
-		// Apply Connect interceptors
-		handler = a.applyGlobalInterceptors(handler)
+		// Apply Connect interceptors if the handler supports it
+		if connectHandler, ok := handler.(interface {
+			WithInterceptors(interceptors ...connect.Interceptor) http.Handler
+		}); ok && len(a.globalInterceptors) > 0 {
+			handler = connectHandler.WithInterceptors(a.globalInterceptors...)
+		}
 
 		a.registrations[i].Handler = handler
 	}
@@ -123,7 +135,7 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 		args = append(args, a.Key, a.Value.Any())
 	}
 
-	a.logger.Debug("GeneratedHTTPRequest", args...)
+	slog.Debug("GeneratedHTTPRequest", args...)
 
 	w := lambda.NewProxyResponseWriter()
 
@@ -143,14 +155,14 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 
 	// Find and execute handler
 	for _, reg := range sortedRegistrations {
-		a.logger.Debug("Handle:", "reg.Path", reg.Path)
+		slog.Debug("Handle:", "reg.Path", reg.Path)
 
 		if a.pathMatches(path, reg.Path) {
 			reg.Handler.ServeHTTP(w, req)
 
 			resp, err := w.GetLambdaResponse()
 			if err != nil {
-				a.logger.Error("Failed to get lambda response", "error", err)
+				slog.Error("Failed to get lambda response", "error", err)
 
 				return nil, fmt.Errorf("failed to get lambda response: %w", err)
 			}
@@ -175,7 +187,7 @@ func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (even
 
 		req, err := lambda.AWSRequestToHTTPRequest(ctx, request)
 		if err != nil {
-			a.logger.Error("Failed to create HTTP request", "error", err)
+			slog.Error("Failed to create HTTP request", "error", err)
 
 			return events.ALBTargetGroupResponse{
 				StatusCode: http.StatusInternalServerError,
@@ -212,7 +224,7 @@ func (a *App) HandleAPIGateway() func(context.Context, events.APIGatewayV2HTTPRe
 
 		req, err := lambda.AWSRequestToHTTPRequest(ctx, request)
 		if err != nil {
-			a.logger.Error("Failed to create HTTP request", "error", err)
+			slog.Error("Failed to create HTTP request", "error", err)
 
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusInternalServerError,
