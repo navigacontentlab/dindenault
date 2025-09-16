@@ -11,9 +11,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/navigacontentlab/dindenault/cors"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // ExtractServiceAndMethod extracts the service name and method name from a Connect RPC procedure path.
@@ -119,46 +116,6 @@ func XRay(name string) connect.Interceptor {
 			// If there was an error, record it
 			if err != nil {
 				_ = seg.AddError(err)
-			}
-
-			return resp, err
-		}
-	})
-}
-
-// OpenTelemetry creates a Connect interceptor that adds OpenTelemetry tracing.
-//
-//nolint:ireturn
-func OpenTelemetry(name string) connect.Interceptor {
-	// Create a tracer for this service
-	tracer := otel.Tracer(name)
-
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Extract procedure information
-			procedure := req.Spec().Procedure
-			service, method := ExtractServiceAndMethod(procedure)
-
-			// Create a span for this RPC call
-			spanName := service + "." + method
-			spanCtx, span := tracer.Start(ctx, spanName,
-				trace.WithAttributes(
-					attribute.String("rpc.system", "connect"),
-					attribute.String("rpc.service", service),
-					attribute.String("rpc.method", method),
-					attribute.String("rpc.procedure", procedure),
-				),
-			)
-
-			// Ensure span is ended when we're done
-			defer span.End()
-
-			// Call the next handler with the span context
-			resp, err := next(spanCtx, req)
-
-			// If there was an error, record it
-			if err != nil {
-				span.RecordError(err)
 			}
 
 			return resp, err

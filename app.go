@@ -6,7 +6,6 @@
 //   - Service registration for Connect RPC handlers
 //   - Authentication with Naviga ID
 //   - Permission checking
-//   - Telemetry (logging, tracing, metrics)
 //   - CORS support
 //   - Integration with Connect's native compression
 //
@@ -55,7 +54,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/navigacontentlab/dindenault/internal/lambda"
-	"github.com/navigacontentlab/dindenault/internal/telemetry"
 )
 
 // App handles Connect services in Lambda.
@@ -63,7 +61,6 @@ type App struct {
 	registrations      []Registration
 	logger             *slog.Logger
 	globalInterceptors []connect.Interceptor
-	telemetryOptions   *telemetry.Options
 }
 
 // GlobalInterceptors returns the list of global interceptors for testing.

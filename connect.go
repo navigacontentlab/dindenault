@@ -1,17 +1,12 @@
 package dindenault
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/navigacontentlab/dindenault/cors"
 	"github.com/navigacontentlab/dindenault/internal/interceptors"
-	"github.com/navigacontentlab/dindenault/internal/telemetry"
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
 
@@ -410,69 +405,6 @@ func (a *App) applyGlobalInterceptors(handler http.Handler) http.Handler {
 		"interceptors", len(a.globalInterceptors))
 
 	return handler
-}
-
-// WithTelemetry adds OpenTelemetry and CloudWatch metrics.
-func WithTelemetry(logger *slog.Logger) Option {
-	return func(a *App) {
-		// Create default options if none exist
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{
-				MetricNamespace: "Dindenault",
-				OrganizationFn:  telemetry.DefaultOrganizationFunction,
-			}
-		}
-
-		// Create a telemetry interceptor for Connect
-		telemetryInterceptor := telemetry.Interceptor(logger, a.telemetryOptions)
-
-		// Add the interceptor to global interceptors
-		a.globalInterceptors = append(a.globalInterceptors, telemetryInterceptor)
-	}
-}
-
-// WithTelemetryNamespace sets the CloudWatch namespace for metrics.
-func WithTelemetryNamespace(namespace string) Option {
-	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
-		}
-
-		a.telemetryOptions.MetricNamespace = namespace
-	}
-}
-
-// WithTelemetryOrganizationFunction sets a custom function to extract organization from context.
-func WithTelemetryOrganizationFunction(fn func(ctx context.Context) string) Option {
-	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
-		}
-
-		a.telemetryOptions.OrganizationFn = fn
-	}
-}
-
-// WithTelemetryAWSSession sets the AWS session for CloudWatch metrics.
-func WithTelemetryAWSSession(sess *session.Session) Option {
-	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
-		}
-
-		a.telemetryOptions.AWSSession = sess
-	}
-}
-
-// WithTelemetryAttributes adds custom attributes to all metrics.
-func WithTelemetryAttributes(attrs ...attribute.KeyValue) Option {
-	return func(a *App) {
-		if a.telemetryOptions == nil {
-			a.telemetryOptions = &telemetry.Options{}
-		}
-
-		a.telemetryOptions.MetricAttributes = append(a.telemetryOptions.MetricAttributes, attrs...)
-	}
 }
 
 // WithConnectServiceCORS wraps a Connect RPC handler with CORS support.
