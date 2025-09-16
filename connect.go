@@ -49,14 +49,6 @@ func XRayInterceptors(name string) connect.Interceptor {
 	return interceptors.XRay(name)
 }
 
-// OpenTelemetryInterceptors returns OpenTelemetry tracing interceptors for Connect RPC.
-// This creates interceptors that add OpenTelemetry tracing to Connect RPC calls.
-//
-//nolint:ireturn // Returning interface as intended by connect.Interceptor design
-func OpenTelemetryInterceptors(name string) connect.Interceptor {
-	return interceptors.OpenTelemetry(name)
-}
-
 // CORSInterceptors returns CORS interceptors for Connect RPC.
 // This creates interceptors that add CORS headers to Connect RPC responses.
 //
