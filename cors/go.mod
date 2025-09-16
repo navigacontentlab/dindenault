@@ -8,3 +8,5 @@ require (
 	golang.org/x/net v0.39.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
+
+replace github.com/navigacontentlab/dindenault => ../

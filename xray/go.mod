@@ -22,3 +22,5 @@ require (
 	google.golang.org/grpc v1.64.1 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
+
+replace github.com/navigacontentlab/dindenault => ../
