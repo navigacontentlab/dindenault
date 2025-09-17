@@ -17,10 +17,14 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Constants for telemetry.
@@ -56,7 +60,7 @@ func DefaultOrganizationFunction() func(ctx context.Context) string {
 	}
 }
 
-// Initialize initializes OpenTelemetry with CloudWatch metrics export.
+// Initialize initializes OpenTelemetry with CloudWatch metrics and tracing export.
 func Initialize(ctx context.Context, serviceName string, opts *Options) (func(context.Context) error, error) {
 	// Build resource with service metadata
 	res, err := resource.New(ctx,
@@ -69,10 +73,31 @@ func Initialize(ctx context.Context, serviceName string, opts *Options) (func(co
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	// Create OTLP exporter
-	exporter, err := otlpmetricgrpc.New(ctx)
+	// Create OTLP trace exporter
+	traceExporter, err := otlptracegrpc.New(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create OTLP exporter: %w", err)
+		return nil, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
+	}
+
+	// Create TracerProvider
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithResource(res),
+		sdktrace.WithBatcher(traceExporter),
+	)
+
+	// Set the global TracerProvider
+	otel.SetTracerProvider(tp)
+
+	// Set the global TextMapPropagator to handle context propagation
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	// Create OTLP metrics exporter
+	metricsExporter, err := otlpmetricgrpc.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OTLP metrics exporter: %w", err)
 	}
 
 	// Create MeterProvider with the exporter
@@ -80,7 +105,7 @@ func Initialize(ctx context.Context, serviceName string, opts *Options) (func(co
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
-				exporter,
+				metricsExporter,
 				sdkmetric.WithInterval(60*time.Second), // Adjust based on your needs
 			),
 		),
@@ -89,15 +114,23 @@ func Initialize(ctx context.Context, serviceName string, opts *Options) (func(co
 	// Set the global MeterProvider
 	otel.SetMeterProvider(mp)
 
-	// Return a shutdown function
+	// Return a shutdown function that cleans up both providers
 	shutdown := func(ctx context.Context) error {
-		return mp.Shutdown(ctx)
+		// Shutdown tracer provider
+		if err := tp.Shutdown(ctx); err != nil {
+			return fmt.Errorf("failed to shutdown tracer provider: %w", err)
+		}
+		// Shutdown meter provider
+		if err := mp.Shutdown(ctx); err != nil {
+			return fmt.Errorf("failed to shutdown meter provider: %w", err)
+		}
+		return nil
 	}
 
 	return shutdown, nil
 }
 
-// Interceptor creates a Connect interceptor for collecting telemetry.
+// Interceptor creates a Connect interceptor for collecting telemetry and tracing.
 //
 //nolint:ireturn
 func Interceptor(logger *slog.Logger, opts *Options) connect.Interceptor {
@@ -105,6 +138,8 @@ func Interceptor(logger *slog.Logger, opts *Options) connect.Interceptor {
 	logger.Debug("Creating telemetry interceptor")
 	// Get a meter from the global MeterProvider
 	meter := otel.GetMeterProvider().Meter("dindenault")
+	// Get a tracer from the global TracerProvider
+	tracer := otel.GetTracerProvider().Tracer("dindenault")
 
 	// Create instruments
 	requestCounter, _ := meter.Int64Counter("rpc.requests",
@@ -131,11 +166,24 @@ func Interceptor(logger *slog.Logger, opts *Options) connect.Interceptor {
 			procedure := req.Spec().Procedure
 			service, method := ExtractServiceAndMethod(procedure)
 
+			// Start a span for this RPC call
+			ctx, span := tracer.Start(ctx, fmt.Sprintf("%s.%s", service, method),
+				trace.WithAttributes(
+					attribute.String("rpc.service", service),
+					attribute.String("rpc.method", method),
+					attribute.String("rpc.procedure", procedure),
+				),
+			)
+			defer span.End()
+
 			// Get organization from context
 			organization := UnknownValue
 			if opts != nil && opts.OrganizationFn != nil {
 				organization = opts.OrganizationFn(ctx)
 			}
+
+			// Add organization to span
+			span.SetAttributes(attribute.String("organization", organization))
 
 			// Common attributes for all metrics
 			commonAttrs := []attribute.KeyValue{
@@ -158,13 +206,21 @@ func Interceptor(logger *slog.Logger, opts *Options) connect.Interceptor {
 			status := "success"
 
 			if err != nil {
+				// Record error in span
+				span.RecordError(err)
+				span.SetAttributes(attribute.Bool("error", true))
+
 				var connectErr *connect.Error
 				if errors.As(err, &connectErr) {
 					status = connectErr.Code().String()
+					span.SetAttributes(attribute.String("rpc.connect.status_code", status))
 				} else {
 					status = "error"
 				}
 			}
+
+			// Set span status
+			span.SetAttributes(attribute.String("rpc.status", status))
 
 			// Response attributes include status
 			// Copy commonAttrs and add status
@@ -179,7 +235,9 @@ func Interceptor(logger *slog.Logger, opts *Options) connect.Interceptor {
 			if startTimeVal := ctx.Value(startTimeContextKey); startTimeVal != nil {
 				if startTime, ok := startTimeVal.(time.Time); ok {
 					duration := time.Since(startTime)
-					durationHistogram.Record(ctx, float64(duration.Milliseconds()), metric.WithAttributes(commonAttrs...))
+					durationMs := float64(duration.Milliseconds())
+					durationHistogram.Record(ctx, durationMs, metric.WithAttributes(commonAttrs...))
+					span.SetAttributes(attribute.Float64("rpc.duration_ms", durationMs))
 				}
 			}
 
@@ -194,7 +252,6 @@ func InstrumentHandler(handler interface{}) interface{} {
 	return otellambda.InstrumentHandler(handler)
 }
 
-// PutCloudWatchMetric sends a custom metric to CloudWatch.
 // PutCloudWatchMetric sends a custom metric to CloudWatch
 func PutCloudWatchMetric(ctx context.Context, cwClient *cloudwatch.Client, namespace, metricName string, value float64, dimensions []types.Dimension) error {
 	_, err := cwClient.PutMetricData(ctx, &cloudwatch.PutMetricDataInput{

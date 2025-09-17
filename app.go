@@ -23,7 +23,7 @@
 //	import (
 //		"github.com/navigacontentlab/dindenault"
 //		"github.com/navigacontentlab/dindenault/navigaid"
-//		"github.com/navigacontentlab/dindenault/xray"
+//		"github.com/navigacontentlab/dindenault/telemetry"
 //		"github.com/navigacontentlab/dindenault/cors"
 //	)
 //
@@ -36,6 +36,16 @@
 //	    connect.WithCompressMinBytes(1024), // Enable compression
 //	)
 //
+//	// Initialize OpenTelemetry (do this early)
+//	shutdown, err := telemetry.Initialize(ctx, "my-service", &telemetry.Options{
+//	    MetricNamespace: "my-service",
+//	    OrganizationFn:  telemetry.DefaultOrganizationFunction(),
+//	})
+//	if err != nil {
+//	    return err
+//	}
+//	defer shutdown(ctx)
+//
 //	// Create JWKS for authentication
 //	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint("https://imas.example.com"))
 //
@@ -43,7 +53,9 @@
 //	app := dindenault.New(logger,
 //	    dindenault.WithInterceptors(
 //	        dindenault.LoggingInterceptors(logger),
-//	        xray.Interceptor("my-service"),
+//	        telemetry.Interceptor(logger, &telemetry.Options{
+//	            OrganizationFn: telemetry.DefaultOrganizationFunction(),
+//	        }),
 //	        navigaid.ConnectInterceptor(logger, jwks),
 //	        cors.Interceptor([]string{"https://app.example.com"}, false),
 //	    ),
@@ -52,7 +64,7 @@
 //
 // Then start the Lambda handler:
 //
-//	lambda.Start(app.Handle())
+//	lambda.Start(telemetry.InstrumentHandler(app.Handle()))
 package dindenault
 
 import (
