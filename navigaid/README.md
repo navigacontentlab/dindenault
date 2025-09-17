@@ -9,7 +9,7 @@ Navigaid provides comprehensive Naviga ID authentication and authorization funct
 - **Connect RPC Integration**: Ready-to-use Connect interceptors
 - **Permission Management**: Check user permissions and group memberships
 - **Token Refresh**: Automatic token refresh for long-running operations
-- **AWS X-Ray Integration**: Built-in tracing support
+- **Tracing Integration**: Built-in support for both OpenTelemetry and AWS X-Ray tracing
 - **Context Management**: Store and retrieve authentication info from context
 
 ## Installation
@@ -114,15 +114,31 @@ err := navigaid.WithTokenRefresh(ctx, refresher, func(refreshedCtx context.Conte
 })
 ```
 
-## AWS X-Ray Integration
+## Tracing Integration
 
-Navigaid automatically integrates with AWS X-Ray when available:
+Navigaid automatically integrates with both **OpenTelemetry** (preferred) and **AWS X-Ray** for observability:
 
 ```go
-// Authentication events are automatically traced
-// Add custom annotations
+// Authentication events are automatically traced with OpenTelemetry spans
+// User and organization info is added as span attributes
+
+// Add custom annotations (works with both OpenTelemetry and X-Ray)
 navigaid.AddAnnotation(ctx, "organization", authInfo.Claims.Org)
+navigaid.AddUserAnnotation(ctx, authInfo.Claims.Subject)
 ```
+
+**OpenTelemetry Support** (Recommended):
+- Automatically adds user and organization attributes to spans
+- Compatible with modern observability backends
+- Works alongside the dindenault telemetry module
+
+**X-Ray Support** (Legacy):
+- Backwards compatible with existing X-Ray setups
+- Will be deprecated in future versions
+
+### Migration to OpenTelemetry
+
+When using navigaid with the dindenault telemetry module, authentication information is automatically added to OpenTelemetry spans. No code changes needed - the module handles both OpenTelemetry and X-Ray for backwards compatibility.
 
 ## API Reference
 

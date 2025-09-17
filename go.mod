@@ -4,7 +4,6 @@ go 1.23.6
 
 require (
 	connectrpc.com/connect v1.18.1
-	github.com/aws/aws-lambda-go v1.48.0
 
 )
 

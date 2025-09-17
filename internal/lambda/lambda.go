@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	awsevents "github.com/aws/aws-lambda-go/events"
+	"github.com/navigacontentlab/dindenault/types"
 )
 
 // RequestContext combines the relevant fields from ALB and API Gateway contexts.
@@ -47,17 +47,15 @@ type Request struct {
 }
 
 // FromALBRequest converts an ALB request to a generic Request.
-func FromALBRequest(alb awsevents.ALBTargetGroupRequest) Request {
+func FromALBRequest(alb types.ALBTargetGroupRequest) Request {
 	req := Request{
-		Version:                         "1.0",
-		Path:                            alb.Path,
-		HTTPMethod:                      alb.HTTPMethod,
-		Headers:                         alb.Headers,
-		MultiValueHeaders:               alb.MultiValueHeaders,
-		QueryStringParameters:           alb.QueryStringParameters,
-		MultiValueQueryStringParameters: alb.MultiValueQueryStringParameters,
-		Body:                            alb.Body,
-		IsBase64Encoded:                 alb.IsBase64Encoded,
+		Version:               "1.0",
+		Path:                  alb.Path,
+		HTTPMethod:            alb.HTTPMethod,
+		Headers:               alb.Headers,
+		QueryStringParameters: alb.QueryStringParams,
+		Body:                  alb.Body,
+		IsBase64Encoded:       alb.IsBase64Encoded,
 	}
 
 	req.RequestContext.ELB.TargetGroupArn = alb.RequestContext.ELB.TargetGroupArn
@@ -66,16 +64,17 @@ func FromALBRequest(alb awsevents.ALBTargetGroupRequest) Request {
 }
 
 // FromAPIGatewayRequest converts an API Gateway request to a generic Request.
-func FromAPIGatewayRequest(apigw awsevents.APIGatewayV2HTTPRequest) Request {
+func FromAPIGatewayRequest(apigw types.APIGatewayV2HTTPRequest) Request {
 	req := Request{
-		Version:         "2.0",
-		Path:            apigw.RawPath,
-		HTTPMethod:      apigw.RequestContext.HTTP.Method,
-		Headers:         apigw.Headers,
-		RawPath:         apigw.RawPath,
-		RawQueryString:  apigw.RawQueryString,
-		Body:            apigw.Body,
-		IsBase64Encoded: apigw.IsBase64Encoded,
+		Version:               "2.0",
+		Path:                  apigw.RawPath,
+		HTTPMethod:            apigw.RequestContext.HTTP.Method,
+		Headers:               apigw.Headers,
+		RawPath:               apigw.RawPath,
+		RawQueryString:        apigw.RawQueryString,
+		QueryStringParameters: apigw.QueryStringParameters,
+		Body:                  apigw.Body,
+		IsBase64Encoded:       apigw.IsBase64Encoded,
 	}
 
 	// Manually copy HTTP fields

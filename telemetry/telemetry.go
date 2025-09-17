@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-lambda-go/otellambda"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -247,9 +246,11 @@ func Interceptor(logger *slog.Logger, opts *Options) connect.Interceptor {
 }
 
 // InstrumentHandler wraps a Lambda handler with OpenTelemetry instrumentation.
+// This is a no-op wrapper since we've removed the aws-lambda-go dependency.
+// Users can instrument their handlers manually or through other means if needed.
 func InstrumentHandler(handler interface{}) interface{} {
-	// Create and return a wrapper with OpenTelemetry
-	return otellambda.InstrumentHandler(handler)
+	// Return handler as-is without instrumentation
+	return handler
 }
 
 // PutCloudWatchMetric sends a custom metric to CloudWatch

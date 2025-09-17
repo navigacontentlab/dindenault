@@ -88,6 +88,55 @@ import "github.com/navigacontentlab/dindenault/xray"
 xray.Interceptor("my-service")
 ```
 
+### From X-Ray to OpenTelemetry (Recommended)
+
+**Before (X-Ray):**
+```go
+import "github.com/navigacontentlab/dindenault/xray"
+
+app := dindenault.New(logger,
+    dindenault.WithInterceptors(
+        dindenault.LoggingInterceptors(logger),
+        xray.Interceptor("my-service"),
+    ),
+)
+```
+
+**After (OpenTelemetry):**
+```go
+import "github.com/navigacontentlab/dindenault/telemetry"
+
+// Initialize OpenTelemetry (do this early in your Lambda handler)
+shutdown, err := telemetry.Initialize(ctx, "my-service", &telemetry.Options{
+    MetricNamespace: "my-service",
+    OrganizationFn:  telemetry.DefaultOrganizationFunction(),
+})
+if err != nil {
+    return err
+}
+defer shutdown(ctx)
+
+// Use telemetry interceptor instead of X-Ray
+app := dindenault.New(logger,
+    dindenault.WithInterceptors(
+        dindenault.LoggingInterceptors(logger),
+        telemetry.Interceptor(logger, &telemetry.Options{
+            OrganizationFn: telemetry.DefaultOrganizationFunction(),
+        }),
+    ),
+)
+
+// Wrap Lambda handler for OpenTelemetry instrumentation
+lambda.Start(telemetry.InstrumentHandler(app.Handle()))
+```
+
+**Benefits of migrating to OpenTelemetry:**
+- ✅ Modern observability standard
+- ✅ AWS SDK v2 compatible (no more v1 dependency)
+- ✅ Better performance and lower overhead
+- ✅ More detailed tracing and metrics
+- ✅ Compatible with multiple backends (not just X-Ray)
+
 ### From Old OpenTelemetryInterceptors
 
 **Before (if it existed):**

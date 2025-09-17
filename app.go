@@ -64,7 +64,14 @@
 //
 // Then start the Lambda handler:
 //
+//	// For ALB events:
 //	lambda.Start(telemetry.InstrumentHandler(app.Handle()))
+//
+//	// For API Gateway events:
+//	lambda.Start(telemetry.InstrumentHandler(app.HandleAPIGateway()))
+//
+// Note: You'll need to import "github.com/aws/aws-lambda-go/lambda" separately
+// in your main function to use lambda.Start()
 package dindenault
 
 import (
@@ -75,8 +82,8 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/navigacontentlab/dindenault/internal/lambda"
+	"github.com/navigacontentlab/dindenault/types"
 )
 
 // App handles Connect services in Lambda.
@@ -190,10 +197,10 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 }
 
 // Handle returns a Lambda handler function for ALB events.
-func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (events.ALBTargetGroupResponse, error) {
+func (a *App) Handle() func(context.Context, types.ALBTargetGroupRequest) (types.ALBTargetGroupResponse, error) {
 	a.prepareHandlers()
 
-	return func(ctx context.Context, event events.ALBTargetGroupRequest) (events.ALBTargetGroupResponse, error) {
+	return func(ctx context.Context, event types.ALBTargetGroupRequest) (types.ALBTargetGroupResponse, error) {
 		// Convert to our internal request type
 		request := lambda.FromALBRequest(event)
 
@@ -201,7 +208,7 @@ func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (even
 		if err != nil {
 			slog.Error("Failed to create HTTP request", "error", err)
 
-			return events.ALBTargetGroupResponse{
+			return types.ALBTargetGroupResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       "Failed to create request: " + err.Error(),
 			}, nil
@@ -209,14 +216,14 @@ func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (even
 
 		resp, err := a.processRequest(ctx, req, request.Path)
 		if err != nil {
-			return events.ALBTargetGroupResponse{
+			return types.ALBTargetGroupResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       "Internal server error: " + err.Error(),
 			}, nil
 		}
 
 		// Convert to ALB response
-		return events.ALBTargetGroupResponse{
+		return types.ALBTargetGroupResponse{
 			StatusCode:        resp.StatusCode,
 			Headers:           resp.Headers,
 			MultiValueHeaders: resp.MultiValueHeaders,
@@ -227,10 +234,10 @@ func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (even
 }
 
 // HandleAPIGateway returns a Lambda handler function for API Gateway events.
-func (a *App) HandleAPIGateway() func(context.Context, events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+func (a *App) HandleAPIGateway() func(context.Context, types.APIGatewayV2HTTPRequest) (types.APIGatewayV2HTTPResponse, error) {
 	a.prepareHandlers()
 
-	return func(ctx context.Context, event events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	return func(ctx context.Context, event types.APIGatewayV2HTTPRequest) (types.APIGatewayV2HTTPResponse, error) {
 		// Convert to our internal request type
 		request := lambda.FromAPIGatewayRequest(event)
 
@@ -238,7 +245,7 @@ func (a *App) HandleAPIGateway() func(context.Context, events.APIGatewayV2HTTPRe
 		if err != nil {
 			slog.Error("Failed to create HTTP request", "error", err)
 
-			return events.APIGatewayV2HTTPResponse{
+			return types.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       "Failed to create request: " + err.Error(),
 			}, nil
@@ -246,14 +253,14 @@ func (a *App) HandleAPIGateway() func(context.Context, events.APIGatewayV2HTTPRe
 
 		resp, err := a.processRequest(ctx, req, request.Path)
 		if err != nil {
-			return events.APIGatewayV2HTTPResponse{
+			return types.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       "Internal server error: " + err.Error(),
 			}, nil
 		}
 
 		// Convert to API Gateway response
-		return events.APIGatewayV2HTTPResponse{
+		return types.APIGatewayV2HTTPResponse{
 			StatusCode:        resp.StatusCode,
 			Headers:           resp.Headers,
 			MultiValueHeaders: resp.MultiValueHeaders,
