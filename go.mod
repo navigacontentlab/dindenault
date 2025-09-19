@@ -1,7 +1,6 @@
 module github.com/navigacontentlab/dindenault
 
-go 1.22.12
-
+go 1.22.3
 
 require (
 	connectrpc.com/connect v1.16.0
@@ -21,11 +20,12 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.0.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.17.6 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -42,4 +42,17 @@ require (
 	google.golang.org/grpc v1.75.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
+
+replace (
+	bitbucket.org/infomaker/content-tools/v2 => bitbucket.org/infomaker/content-tools/v2 v2.0.4-0.20250919152941-cce808f50d94
+	github.com/grpc-ecosystem/grpc-gateway/v2 => github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
+	go.opentelemetry.io/proto/otlp => go.opentelemetry.io/proto/otlp v1.0.0
+	golang.org/x/net => golang.org/x/net v0.30.0
+	golang.org/x/sys => golang.org/x/sys v0.30.0
+	golang.org/x/text => golang.org/x/text v0.20.0
+	google.golang.org/genproto/googleapis/api => google.golang.org/genproto/googleapis/api v0.0.0-20240814211410-ddb44dafa142
+	google.golang.org/genproto/googleapis/rpc => google.golang.org/genproto/googleapis/rpc v0.0.0-20240814211410-ddb44dafa142
+	google.golang.org/grpc => google.golang.org/grpc v1.64.1
+	google.golang.org/protobuf => google.golang.org/protobuf v1.34.2
 )
