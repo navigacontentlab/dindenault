@@ -55,7 +55,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/navigacontentlab/dindenault/internal/lambda"
-	"github.com/navigacontentlab/dindenault/internal/telemetry"
 )
 
 // App handles Connect services in Lambda.
@@ -63,7 +62,8 @@ type App struct {
 	registrations      []Registration
 	logger             *slog.Logger
 	globalInterceptors []connect.Interceptor
-	telemetryOptions   *telemetry.Options
+	telemetryProvider  TelemetryProvider
+	telemetryOptions   TelemetryOptions
 }
 
 // GlobalInterceptors returns the list of global interceptors for testing.

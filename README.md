@@ -41,7 +41,6 @@ app := dindenault.New(logger,
     // Add global interceptors for cross-cutting concerns
     dindenault.WithInterceptors(
         dindenault.LoggingInterceptors(logger),
-        dindenault.XRayInterceptors("my-service"),
         dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
 )
@@ -164,7 +163,7 @@ Dindenault's architecture is built around Connect interceptors. All cross-cuttin
 
 - **`LoggingInterceptors(logger)`**: Adds request logging with timing information
 - **`XRayInterceptors(name)`**: Adds AWS X-Ray tracing
-- **`OpenTelemetryInterceptors(name)`**: Adds OpenTelemetry tracing
+- **`TelemetryInterceptor(logger, provider, opts)`**: Adds optional telemetry (see [Telemetry](#telemetry-and-observability))
 - **`CORSInterceptors(allowedOrigins, allowHTTP)`**: Adds CORS support
 - **`AuthInterceptors(logger, imasURL)`**: Adds Naviga ID authentication
 
@@ -431,74 +430,96 @@ This automatically:
 
 Dindenault includes comprehensive support for observability through logging, tracing, and metrics.
 
-### CloudWatch Metrics with OpenTelemetry
+### Optional OpenTelemetry Integration
 
-```go
-// Create AWS session
-sess, err := session.NewSession(&aws.Config{
-    Region: aws.String(os.Getenv("AWS_REGION")),
-})
-if err != nil {
-    logger.Error("Failed to create AWS session", "error", err)
-    os.Exit(1)
-}
+OpenTelemetry integration is available as an optional feature. By default, dindenault uses no-op telemetry to keep dependencies minimal.
 
-// Add telemetry to your app
-app := dindenault.New(logger,
-    // Add telemetry configuration
-    dindenault.WithTelemetryNamespace("MyService"),
-    dindenault.WithTelemetryAWSSession(sess),
-    dindenault.WithTelemetry(logger), // Enable telemetry collection
-    
-    // Add services and other configuration
-    // ...
-)
-```
-
-### Available Metrics
-
-The default metrics include:
-
-- `rpc.requests`: Counter for incoming requests
-- `rpc.responses`: Counter for outgoing responses
-- `rpc.duration_ms`: Histogram for request duration in milliseconds
-
-All metrics include dimensions for service, method, and organization.
-
-### Customizing Telemetry
-
-```go
-app := dindenault.New(logger,
-    // Custom namespace (default is "Dindenault")
-    dindenault.WithTelemetryNamespace("CustomNamespace"),
-    
-    // Custom organization function
-    dindenault.WithTelemetryOrganizationFunction(func(ctx context.Context) string {
-        return "my-organization"
-    }),
-    
-    // Additional attributes for all metrics
-    dindenault.WithTelemetryAttributes(
-        attribute.String("environment", "production"),
-        attribute.String("region", "us-west-2"),
-    ),
-    
-    // Enable telemetry
-    dindenault.WithTelemetry(logger),
-)
-```
-
-### X-Ray Integration
-
-Dindenault integrates seamlessly with AWS X-Ray for distributed tracing:
+#### Without OpenTelemetry (Default)
 
 ```go
 app := dindenault.New(logger,
     dindenault.WithInterceptors(
-        dindenault.XRayInterceptors("my-service"),
+        dindenault.LoggingInterceptors(logger),
+        // No telemetry - lightweight build
     ),
 )
 ```
+
+#### With OpenTelemetry
+
+First install the OpenTelemetry submodule:
+
+```bash
+go get github.com/navigacontentlab/dindenault/otel@latest
+```
+
+Then use it in your application:
+
+```go
+import (
+    "github.com/navigacontentlab/dindenault"
+    "github.com/navigacontentlab/dindenault/otel"
+    "github.com/aws/aws-sdk-go-v2/config"
+)
+
+// Load AWS config
+awsConfig, err := config.LoadDefaultConfig(ctx)
+if err != nil {
+    return err
+}
+
+// Create OpenTelemetry provider
+telemetryProvider := otel.New(awsConfig)
+
+// Configure telemetry options
+telemetryOpts := dindenault.TelemetryOptions{
+    MetricNamespace: "MyService",
+    OrganizationFn:  otel.DefaultOrganizationFunction,
+}
+
+// Initialize telemetry
+shutdown, err := telemetryProvider.Initialize(ctx, "my-service", telemetryOpts)
+if err != nil {
+    return err
+}
+defer shutdown(ctx)
+
+app := dindenault.New(logger,
+    dindenault.WithInterceptors(
+        dindenault.LoggingInterceptors(logger),
+        dindenault.TelemetryInterceptor(logger, telemetryProvider, telemetryOpts),
+    ),
+)
+```
+
+#### Available Metrics
+
+When using OpenTelemetry, the following metrics are collected:
+
+- `rpc.requests`: Counter for incoming requests
+- `rpc.responses`: Counter for outgoing responses  
+- `rpc.duration_ms`: Histogram for request duration in milliseconds
+
+All metrics include dimensions for service, method, and organization.
+
+#### Explicitly Disabling Telemetry
+
+```go
+app := dindenault.New(logger,
+    dindenault.WithNoopTelemetry(), // Explicitly disable telemetry
+    dindenault.WithInterceptors(
+        dindenault.LoggingInterceptors(logger),
+    ),
+)
+```
+
+
+### Benefits of Optional Telemetry
+
+- **Minimal dependencies**: Applications that don't need telemetry won't pull in heavy OpenTelemetry dependencies
+- **Clean separation**: Telemetry code is isolated in its own module  
+- **Easy testing**: Use `NoopTelemetry{}` in tests
+- **Flexible**: Easy to swap between different telemetry providers
 
 ## Architecture Details
 
@@ -541,13 +562,4 @@ err := navigaid.WithTokenRefresh(ctx, refresher, func(refreshedCtx context.Conte
     // Use refreshedCtx which will have a valid token throughout the operation
     return longRunningOperation(refreshedCtx)
 })
-```
-
-### XRay Annotations
-
-Authentication events are automatically added to XRay traces:
-
-```go
-// Add custom annotations to X-Ray segments
-navigaid.AddAnnotation(ctx, "custom_field", value)
 ```

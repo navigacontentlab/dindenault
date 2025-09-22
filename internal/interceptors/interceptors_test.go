@@ -19,7 +19,6 @@ func TestInterceptors(t *testing.T) {
 
 	// Test that we can create interceptors without errors
 	_ = interceptors.Logging(logger)
-	_ = interceptors.OpenTelemetry("test-service")
 	_ = interceptors.CORS([]string{"example.com"}, false)
 }
 

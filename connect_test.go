@@ -39,14 +39,28 @@ func TestLoggingInterceptors(t *testing.T) {
 	}
 }
 
-func TestOpenTelemetryInterceptors(t *testing.T) {
-	// Create the interceptor
-	interceptor := dindenault.OpenTelemetryInterceptors("test-service")
+func TestTelemetryInterceptor(t *testing.T) {
+	logger := slog.Default()
 
-	// Assert it's not nil
-	if interceptor == nil {
-		t.Error("OpenTelemetryInterceptors returned nil")
-	}
+	t.Run("with noop provider", func(t *testing.T) {
+		// Create the interceptor with noop provider
+		interceptor := dindenault.TelemetryInterceptor(logger, dindenault.NoopTelemetry{}, dindenault.DefaultTelemetryOptions())
+
+		// Should be nil for noop provider
+		if interceptor != nil {
+			t.Error("TelemetryInterceptor with NoopTelemetry should return nil")
+		}
+	})
+
+	t.Run("with nil provider", func(t *testing.T) {
+		// Create the interceptor with nil provider
+		interceptor := dindenault.TelemetryInterceptor(logger, nil, dindenault.DefaultTelemetryOptions())
+
+		// Should be nil for nil provider
+		if interceptor != nil {
+			t.Error("TelemetryInterceptor with nil provider should return nil")
+		}
+	})
 }
 
 func TestCORSInterceptors(t *testing.T) {
