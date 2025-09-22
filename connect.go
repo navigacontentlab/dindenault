@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/navigacontentlab/dindenault/cors"
@@ -453,14 +453,20 @@ func WithTelemetryOrganizationFunction(fn func(ctx context.Context) string) Opti
 	}
 }
 
-// WithTelemetryAWSSession sets the AWS session for CloudWatch metrics.
-func WithTelemetryAWSSession(sess *session.Session) Option {
+// WithTelemetryAWS sets up AWS config for CloudWatch metrics.
+func WithTelemetryAWS(ctx context.Context) Option {
 	return func(a *App) {
 		if a.telemetryOptions == nil {
 			a.telemetryOptions = &telemetry.Options{}
 		}
 
-		a.telemetryOptions.AWSSession = sess
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			// Log error but continue - telemetry is not critical
+			a.logger.Error("Failed to load AWS config for telemetry", "error", err)
+			return
+		}
+		a.telemetryOptions.AWSConfig = cfg
 	}
 }
 

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/navigacontentlab/dindenault/navigaid"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-lambda-go/otellambda"
 	"go.opentelemetry.io/otel"
@@ -41,8 +41,8 @@ type Options struct {
 	// OrganizationFn extracts organization from context
 	OrganizationFn func(ctx context.Context) string
 
-	// AWSSession is the AWS session to use for CloudWatch
-	AWSSession *session.Session
+	// AWSConfig is the AWS config to use for CloudWatch
+	AWSConfig aws.Config
 
 	// MetricAttributes are additional attributes to add to all metrics
 	MetricAttributes []attribute.KeyValue
@@ -197,16 +197,16 @@ func InstrumentHandler(handler interface{}) interface{} {
 }
 
 // PutCloudWatchMetric sends a custom metric to CloudWatch.
-func PutCloudWatchMetric(ctx context.Context, cwClient *cloudwatch.CloudWatch, namespace, metricName string, value float64, dimensions []*cloudwatch.Dimension) error {
-	_, err := cwClient.PutMetricDataWithContext(ctx, &cloudwatch.PutMetricDataInput{
+func PutCloudWatchMetric(ctx context.Context, cwClient *cloudwatch.Client, namespace, metricName string, value float64, dimensions []types.Dimension) error {
+	_, err := cwClient.PutMetricData(ctx, &cloudwatch.PutMetricDataInput{
 		Namespace: aws.String(namespace),
-		MetricData: []*cloudwatch.MetricDatum{
+		MetricData: []types.MetricDatum{
 			{
 				MetricName: aws.String(metricName),
 				Value:      aws.Float64(value),
 				Dimensions: dimensions,
 				Timestamp:  aws.Time(time.Now()),
-				Unit:       aws.String(cloudwatch.StandardUnitCount),
+				Unit:       types.StandardUnitCount,
 			},
 		},
 	})
@@ -219,11 +219,16 @@ func PutCloudWatchMetric(ctx context.Context, cwClient *cloudwatch.CloudWatch, n
 }
 
 // CreateDimension creates a CloudWatch dimension.
-func CreateDimension(name, value string) *cloudwatch.Dimension {
-	return &cloudwatch.Dimension{
+func CreateDimension(name, value string) types.Dimension {
+	return types.Dimension{
 		Name:  aws.String(name),
 		Value: aws.String(value),
 	}
+}
+
+// NewCloudWatchClient creates a CloudWatch client from AWS config.
+func NewCloudWatchClient(cfg aws.Config) *cloudwatch.Client {
+	return cloudwatch.NewFromConfig(cfg)
 }
 
 // ExtractServiceAndMethod extracts the service name and method name from a Connect RPC procedure path.

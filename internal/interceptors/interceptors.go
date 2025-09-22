@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/navigacontentlab/dindenault/cors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -86,39 +85,6 @@ func Logging(logger *slog.Logger) connect.Interceptor {
 				logger.Error("Connect RPC request failed", logAttrs...)
 			} else {
 				logger.Info("Connect RPC request completed", logAttrs...)
-			}
-
-			return resp, err
-		}
-	})
-}
-
-// XRay creates a Connect interceptor that adds AWS X-Ray tracing.
-//
-//nolint:ireturn
-func XRay(name string) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Extract procedure information
-			procedure := req.Spec().Procedure
-			service, method := ExtractServiceAndMethod(procedure)
-
-			// Create a subsegment for this RPC call
-			subCtx, seg := xray.BeginSubsegment(ctx, name+":"+service+"."+method)
-			defer seg.Close(nil)
-
-			// Add procedure information as annotations
-			// Ignore errors as we can't do anything if annotation fails
-			_ = seg.AddAnnotation("rpc.service", service)
-			_ = seg.AddAnnotation("rpc.method", method)
-			_ = seg.AddAnnotation("rpc.procedure", procedure)
-
-			// Call the next handler with the X-Ray context
-			resp, err := next(subCtx, req)
-
-			// If there was an error, record it
-			if err != nil {
-				_ = seg.AddError(err)
 			}
 
 			return resp, err
