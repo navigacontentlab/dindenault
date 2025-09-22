@@ -44,9 +44,9 @@ func SetAuth(ctx context.Context, auth AuthInfo, err error) context.Context {
 }
 
 // AddAnnotation adds an annotation to the XRay segment in the current context.
+// Switch to opentelemetry
 func AddAnnotation(ctx context.Context, key string, value string) {
-	// Add XRay annotation if available
-	addXRayAnnotation(ctx, key, value)
+
 }
 
 // AddUserAnnotation adds a user annotation to the XRay segment in the current context.

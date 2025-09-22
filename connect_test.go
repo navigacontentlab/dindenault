@@ -16,13 +16,12 @@ func TestWithInterceptors(t *testing.T) {
 
 	// Create test interceptors
 	testInterceptor1 := dindenault.LoggingInterceptors(logger)
-	testInterceptor2 := dindenault.XRayInterceptors("test-service")
 
 	// Apply the WithInterceptors option
-	dindenault.WithInterceptors(testInterceptor1, testInterceptor2)(app)
+	dindenault.WithInterceptors(testInterceptor1)(app)
 
 	// Check that interceptors were added
-	if len(app.GlobalInterceptors()) != 2 {
+	if len(app.GlobalInterceptors()) != 1 {
 		t.Errorf("Expected 2 interceptors, got %d", len(app.GlobalInterceptors()))
 	}
 }
@@ -37,16 +36,6 @@ func TestLoggingInterceptors(t *testing.T) {
 	// Assert it's not nil
 	if interceptor == nil {
 		t.Error("LoggingInterceptors returned nil")
-	}
-}
-
-func TestXRayInterceptors(t *testing.T) {
-	// Create the interceptor
-	interceptor := dindenault.XRayInterceptors("test-service")
-
-	// Assert it's not nil
-	if interceptor == nil {
-		t.Error("XRayInterceptors returned nil")
 	}
 }
 
@@ -92,16 +81,15 @@ func TestMultipleInterceptors(t *testing.T) {
 
 	// Create multiple interceptors
 	loggingInterceptor := dindenault.LoggingInterceptors(logger)
-	xrayInterceptor := dindenault.XRayInterceptors("test-service")
 
 	// Create a test app
 	app := dindenault.New(logger)
 
 	// Add the interceptors
-	dindenault.WithInterceptors(loggingInterceptor, xrayInterceptor)(app)
+	dindenault.WithInterceptors(loggingInterceptor)(app)
 
 	// Check the number of interceptors
-	if len(app.GlobalInterceptors()) != 2 {
+	if len(app.GlobalInterceptors()) != 1 {
 		t.Errorf("Expected 2 interceptors, got %d", len(app.GlobalInterceptors()))
 	}
 }
