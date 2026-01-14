@@ -93,6 +93,7 @@ func (p PermissionsClaim) PermissionsInUnit(unit string) map[string]bool {
 	return m
 }
 
+// Valid validates the claims according to JWT standards.
 func (c Claims) Valid() error {
 	err := c.RegisteredClaims.Valid()
 	if err != nil {

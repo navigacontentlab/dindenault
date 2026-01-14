@@ -1,9 +1,10 @@
 package dindenault
 
 import (
-	"connectrpc.com/connect"
 	"context"
 	"log/slog"
+
+	"connectrpc.com/connect"
 
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
@@ -41,13 +42,15 @@ type TelemetryOptions struct {
 type NoopTelemetry struct{}
 
 // Initialize implements TelemetryProvider for NoopTelemetry.
-func (n NoopTelemetry) Initialize(ctx context.Context, serviceName string, opts TelemetryOptions) (func(context.Context) error, error) {
+func (n NoopTelemetry) Initialize(_ context.Context, _ string, _ TelemetryOptions) (func(context.Context) error, error) {
 	// Return a no-op shutdown function
 	return func(context.Context) error { return nil }, nil
 }
 
 // Interceptor implements TelemetryProvider for NoopTelemetry.
-func (n NoopTelemetry) Interceptor(logger *slog.Logger, opts TelemetryOptions) connect.Interceptor {
+//
+//nolint:ireturn // Returning interface as intended by TelemetryProvider design
+func (n NoopTelemetry) Interceptor(_ *slog.Logger, _ TelemetryOptions) connect.Interceptor {
 	return nil // No interceptor
 }
 
@@ -65,6 +68,7 @@ func DefaultTelemetryOptions() TelemetryOptions {
 			if err != nil {
 				return "unknown"
 			}
+
 			return auth.Claims.Org
 		},
 	}

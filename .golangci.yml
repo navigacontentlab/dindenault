@@ -1,18 +1,15 @@
 version: "2"
-linters-settings:
-    funlen:
-        lines: 120
-        statements: 100
-    gci:
-        sections:
-            - standard
-            - default
-    godox:
-        keywords:
-            - FIXME
+
 linters:
+    settings:
+        funlen:
+            lines: 120
+            statements: 100
+        godox:
+            keywords:
+                - FIXME
     disable:
-        - gci
+        - wsl  # Deprecated in favor of wsl_v5, disabled for now
     enable:
         - bodyclose
         - copyloopvar
@@ -29,14 +26,11 @@ linters:
         - gocritic
         - godot
         - godox
-        - gofmt
         - goheader
-        - goimports
         - gomoddirectives
         - gomodguard
         - goprintffuncname
         - gosec
-        - gosimple
         - govet
         - importas
         - ineffassign
@@ -53,15 +47,22 @@ linters:
         - revive
         - rowserrcheck
         - staticcheck
-        - stylecheck
-        - tenv
         - testpackage
         - thelper
-        - typecheck
         - unconvert
         - unparam
         - unused
         - wastedassign
         - whitespace
         - wrapcheck
-        - wsl
+
+formatters:
+    settings:
+        gofmt:
+            simplify: true
+        goimports:
+            local-prefixes:
+                - github.com/navigacontentlab/dindenault
+    enable:
+        - gofmt
+        - goimports

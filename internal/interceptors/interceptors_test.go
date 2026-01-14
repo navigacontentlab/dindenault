@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+
 	"github.com/navigacontentlab/dindenault/internal/interceptors"
 )
 

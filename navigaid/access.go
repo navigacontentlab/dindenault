@@ -1,3 +1,4 @@
+// Package navigaid provides authentication and authorization functionality for Naviga ID.
 package navigaid
 
 import (
