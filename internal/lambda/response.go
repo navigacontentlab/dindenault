@@ -32,6 +32,7 @@ func NewProxyResponseWriter() *ProxyResponseWriter {
 	}
 }
 
+// CloseNotify implements http.CloseNotifier for compatibility.
 func (r *ProxyResponseWriter) CloseNotify() <-chan bool {
 	ch := make(chan bool, 1)
 

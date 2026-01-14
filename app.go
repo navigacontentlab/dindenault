@@ -1,14 +1,24 @@
 // Package dindenault provides a framework for building Connect RPC services
-// for AWS Lambda. It offers:
+// for AWS Lambda with a clean, intuitive API.
 //
 // # Features
 //
-//   - Service registration for Connect RPC handlers
+//   - Single service registration method (WithService)
+//   - Optional CORS configuration (WithConnectRPC)
 //   - Authentication with Naviga ID
-//   - Permission checking
+//   - Method-level permissions with PathInterceptors
 //   - Telemetry (logging, tracing, metrics)
-//   - CORS support
 //   - Integration with Connect's native compression
+//
+// # Core API
+//
+// Dindenault provides a simplified API with clear, single-purpose functions:
+//
+//   - WithService: Register any HTTP handler (the only service registration method)
+//   - WithConnectRPC: Add optional CORS support for web clients
+//   - PathInterceptors: Apply method-level permissions at handler creation
+//   - AuthInterceptors: Add authentication to handlers
+//   - WithInterceptors: Add global interceptors for cross-cutting concerns
 //
 // # Architecture
 //
@@ -17,32 +27,65 @@
 // are used for cross-cutting concerns like authentication, logging,
 // tracing, and CORS.
 //
-// # Usage
+// # Basic Usage
 //
-// Create a new App with options:
+// Create a simple internal service:
 //
-//	// Create your service implementation
 //	impl := service.NewServiceImpl()
+//	path, handler := servicev1connect.NewServiceHandler(impl)
 //
-//	// Create Connect handler with compression and other options
+//	app := dindenault.New(logger,
+//	    dindenault.WithService(path, handler),
+//	)
+//
+//	lambda.Start(app.Handle())
+//
+// # Web Service with CORS
+//
+// Add CORS for web-facing services:
+//
+//	app := dindenault.New(logger,
+//	    dindenault.WithConnectRPC(cors.Options{
+//	        AllowedDomains: []string{".mycompany.com"},
+//	    }),
+//	    dindenault.WithService(path, handler),
+//	)
+//
+// # Service with Authentication and Permissions
+//
+// Apply authentication and method-level permissions:
+//
+//	permissionConfigs := []dindenault.PathPermissionConfig{
+//	    {PathPrefix: "/service.v1.Service/SecureMethod", Permissions: []string{"service:access"}},
+//	}
+//
 //	path, handler := servicev1connect.NewServiceHandler(
 //	    impl,
 //	    connect.WithCompressMinBytes(1024), // Enable compression
-//	)
-//
-//	// Create app with the handler and global interceptors
-//	app := dindenault.New(logger,
-//	    dindenault.WithSecureService(path, handler, []string{"service:access"}),
-//	    dindenault.WithInterceptors(
-//	        dindenault.LoggingInterceptors(logger),
-//	        dindenault.XRayInterceptors("my-service"),
+//	    connect.WithInterceptors(
 //	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
+//	        dindenault.PathInterceptors(logger, permissionConfigs),
 //	    ),
 //	)
 //
-// Then start the Lambda handler:
+//	app := dindenault.New(logger,
+//	    dindenault.WithService(path, handler),
+//	    dindenault.WithInterceptors(
+//	        dindenault.LoggingInterceptors(logger),
+//	    ),
+//	)
 //
 //	lambda.Start(app.Handle())
+//
+// # Migration from Deprecated Functions
+//
+// If you're migrating from older versions:
+//
+//   - Replace WithConnectService with WithService (identical functionality)
+//   - Replace WithSecureService with PathInterceptors at handler creation
+//   - Replace WithConnectRPCCORS with WithConnectRPC (renamed for clarity)
+//
+// See the README.md for detailed examples and best practices.
 package dindenault
 
 import (
@@ -54,6 +97,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/aws/aws-lambda-go/events"
+
 	"github.com/navigacontentlab/dindenault/internal/lambda"
 )
 
@@ -69,6 +113,11 @@ type App struct {
 // GlobalInterceptors returns the list of global interceptors for testing.
 func (a *App) GlobalInterceptors() []connect.Interceptor {
 	return a.globalInterceptors
+}
+
+// Registrations returns the list of service registrations for testing.
+func (a *App) Registrations() []Registration {
+	return a.registrations
 }
 
 // Registration represents a Connect service registration.

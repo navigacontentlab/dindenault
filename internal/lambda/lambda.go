@@ -1,3 +1,4 @@
+// Package lambda provides utilities for handling AWS Lambda events and responses.
 package lambda
 
 import (
@@ -98,6 +99,9 @@ type Response struct {
 	Cookies           []string            `json:"cookies"`
 }
 
+// AWSRequestToHTTPRequest converts an AWS Lambda request to a standard HTTP request.
+//
+//nolint:funlen // Function handles multiple request formats and requires comprehensive logic
 func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request, error) {
 	HTTPMethod := event.HTTPMethod
 	if event.Version == "2.0" {

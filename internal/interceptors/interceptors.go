@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+
 	"github.com/navigacontentlab/dindenault/cors"
 )
 

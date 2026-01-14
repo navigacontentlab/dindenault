@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
-	da "github.com/navigacontentlab/dindenault"
-	"github.com/navigacontentlab/dindenault/navigaid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	da "github.com/navigacontentlab/dindenault"
+	"github.com/navigacontentlab/dindenault/navigaid"
 )
 
 func TestAuthorizeWithDetails(t *testing.T) {

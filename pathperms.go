@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
 
@@ -134,9 +135,41 @@ func WithPathPermissionService(
 	}
 }
 
-// PathInterceptor creates an interceptor for Connect that applies path-specific permission checks.
-// This is an alternative to WithPathPermissionService for use with Connect handlers that implement
-// the ConnectHandlerWithInterceptor interface.
+// PathInterceptors creates a Connect interceptor that applies method-level permission checks.
+//
+// This is the recommended way to apply permissions to specific RPC methods.
+// Use this at handler creation time with connect.WithInterceptors.
+//
+// The interceptor checks the RPC method path against configured prefixes and
+// enforces the specified permissions. If no matching configuration is found,
+// the request proceeds without additional permission checks.
+//
+// Important: Always apply AuthInterceptors before PathInterceptors to ensure
+// authentication happens first.
+//
+// Example - Basic usage:
+//
+//	permissionConfigs := []dindenault.PathPermissionConfig{
+//	    {PathPrefix: "/service.v1.Service/Upload", Permissions: []string{"service:write"}},
+//	    {PathPrefix: "/service.v1.Service/Search", Permissions: []string{"service:read"}},
+//	}
+//
+//	path, handler := servicev1connect.NewServiceHandler(
+//	    impl,
+//	    connect.WithInterceptors(
+//	        dindenault.AuthInterceptors(logger, imasURL),
+//	        dindenault.PathInterceptors(logger, permissionConfigs),
+//	    ),
+//	)
+//
+// Example - Multiple permissions required:
+//
+//	permissionConfigs := []dindenault.PathPermissionConfig{
+//	    {
+//	        PathPrefix: "/service.v1.Service/DeleteAll",
+//	        Permissions: []string{"service:write", "service:admin"},
+//	    },
+//	}
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
 func PathInterceptors(logger *slog.Logger, configs []PathPermissionConfig) connect.Interceptor {
