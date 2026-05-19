@@ -13,6 +13,7 @@ Dindenault provides a framework for building Connect RPC services in AWS Lambda.
 - [Authentication with Naviga ID](#authentication-with-naviga-id)
 - [Response Compression](#response-compression)
 - [CORS Support](#cors-support)
+- [MCP (Model Context Protocol) Support](#mcp-model-context-protocol-support)
 - [Telemetry and Observability](#telemetry-and-observability)
 - [Architecture Details](#architecture-details)
 - [Advanced Features](#advanced-features)
@@ -26,6 +27,7 @@ Dindenault provides a framework for building Connect RPC services in AWS Lambda.
 - **Authentication and authorization**: Built-in support for Naviga ID
 - **Comprehensive observability**: Integrated logging, tracing, and metrics
 - **Response compression**: Native support through Connect's compression capabilities
+- **MCP support**: Expose tools to AI agents (e.g. AWS Bedrock AgentCore) via the Model Context Protocol
 - **Simplified deployment**: Ready for AWS Lambda environments
 
 ## Core Concepts
@@ -724,6 +726,112 @@ When CORS is enabled, the following headers are automatically added:
 - **Suffix match**: `".example.com"` matches `https://app.example.com`, `https://api.example.com`, etc.
 - **Wildcard**: `"*"` matches any origin (use with caution)
 - **Protocol**: HTTP origins are only allowed when `AllowHTTP: true`
+
+## MCP (Model Context Protocol) Support
+
+Dindenault includes a built-in stateless MCP server that lets AI agents such as AWS Bedrock AgentCore discover and call your Lambda's business logic as tools.
+
+The implementation uses the **MCP Streamable HTTP transport** (JSON-RPC 2.0 over plain HTTP POST), which requires no SSE or persistent connections and maps naturally to the Lambda execution model.
+
+### How It Works
+
+A POST to your MCP endpoint carries a JSON-RPC 2.0 request. The server handles three methods:
+
+- `initialize` — returns server info and capabilities
+- `tools/list` — returns the list of available tools and their JSON schemas
+- `tools/call` — invokes a tool by name and returns the result
+
+### Registering an MCP Endpoint
+
+Use `WithMCP` to mount an MCP server at any path alongside your existing Connect RPC services:
+
+```go
+import (
+    "context"
+    "encoding/json"
+
+    "github.com/navigacontentlab/dindenault"
+    "github.com/navigacontentlab/dindenault/mcp"
+)
+
+app := dindenault.New(logger,
+    dindenault.WithService(connectPath, connectHandler), // existing Connect RPC
+    dindenault.WithMCP("/mcp",
+        mcp.Tool{
+            Name:        "search_articles",
+            Description: "Search articles in the content archive by free-text query",
+            InputSchema: json.RawMessage(`{
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Free-text search query"},
+                    "limit": {"type": "integer", "default": 10}
+                },
+                "required": ["query"]
+            }`),
+            Handler: func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+                token := mcp.AuthorizationFromContext(ctx) // forward JWT downstream
+                var args struct {
+                    Query string `json:"query"`
+                    Limit int    `json:"limit"`
+                }
+                if err := json.Unmarshal(input, &args); err != nil {
+                    return nil, err
+                }
+                // ... call your service
+                return json.Marshal(map[string]any{"results": results})
+            },
+        },
+    ),
+)
+
+lambda.Start(app.Handle())
+```
+
+### Tool Definition
+
+Each `mcp.Tool` has four fields:
+
+```go
+type Tool struct {
+    Name        string          // Tool identifier shown to the AI model
+    Description string          // Explains what the tool does — shown to the model
+    InputSchema json.RawMessage // JSON Schema for the arguments (optional)
+    Handler     ToolHandler     // func(ctx, json.RawMessage) (json.RawMessage, error)
+}
+```
+
+If `InputSchema` is `nil`, the server defaults to `{"type":"object","properties":{}}`.
+
+### Authentication Pass-Through
+
+The `Authorization` header from the incoming HTTP request is propagated to every tool handler via the context. Use `mcp.AuthorizationFromContext` to retrieve it:
+
+```go
+func myHandler(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+    token := mcp.AuthorizationFromContext(ctx) // "Bearer eyJ..."
+    // Forward token to downstream APIs
+}
+```
+
+### Tool Errors
+
+When a handler returns an error, the MCP server returns a successful JSON-RPC response with `isError: true` in the result (per MCP spec). This lets the AI model observe the error and decide how to proceed, rather than treating it as a protocol-level failure.
+
+### Custom Server Name and Version
+
+`WithMCP` uses `"dindenault"` as the server name by default. For full control, register the server manually:
+
+```go
+server := mcp.NewServer("my-service", "2.1.0", tools...)
+app := dindenault.New(logger,
+    dindenault.WithService("/mcp", server),
+)
+```
+
+### Note on Global Interceptors
+
+Connect interceptors registered with `WithInterceptors` are not applied to MCP handlers, since they operate at the Connect RPC layer. Any authentication or logging for MCP tools should be handled inside the tool handlers themselves.
+
 
 ## Telemetry and Observability
 
