@@ -21,7 +21,7 @@ type Option func(*App)
 //	app := dindenault.New(Logger,
 //		dindenault.WithInterceptors(
 //			dindenault.LoggingInterceptors(Logger),
-//			dindenault.XRayInterceptors("my-service"),
+//			dindenault.TelemetryInterceptor(Logger, xrayProvider, telemetryOpts),
 //			dindenault.AuthInterceptors(Logger, "https://imas.example.com"),
 //		),
 //	)

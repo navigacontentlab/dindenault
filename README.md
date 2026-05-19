@@ -240,10 +240,17 @@ Dindenault's architecture is built around Connect interceptors. All cross-cuttin
 ### Available Interceptors
 
 - **`LoggingInterceptors(logger)`**: Adds request logging with timing information
-- **`XRayInterceptors(name)`**: Adds AWS X-Ray tracing
 - **`TelemetryInterceptor(logger, provider, opts)`**: Adds optional telemetry (see [Telemetry](#telemetry-and-observability))
 - **`CORSInterceptors(allowedOrigins, allowHTTP)`**: Adds CORS support
 - **`AuthInterceptors(logger, imasURL)`**: Adds Naviga ID authentication
+
+For AWS X-Ray tracing, use the [`xray` submodule](./xray/README.md):
+
+```go
+import xrayprovider "github.com/navigacontentlab/dindenault/xray"
+
+provider := xrayprovider.New()
+```
 
 ### Using Interceptors
 
@@ -253,18 +260,9 @@ The `WithInterceptors` function allows adding multiple interceptors in a single 
 app := dindenault.New(logger,
     dindenault.WithInterceptors(
         dindenault.LoggingInterceptors(logger),
-        dindenault.XRayInterceptors("my-service"),
+        dindenault.TelemetryInterceptor(logger, provider, telemetryOpts),
         dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
-)
-```
-
-For convenience, you can also use `WithDefaultServices()` to add logging and tracing:
-
-```go
-app := dindenault.New(logger,
-    dindenault.WithName("my-service"),
-    dindenault.WithDefaultServices(),
 )
 ```
 
@@ -831,7 +829,6 @@ app := dindenault.New(logger,
 ### Note on Global Interceptors
 
 Connect interceptors registered with `WithInterceptors` are not applied to MCP handlers, since they operate at the Connect RPC layer. Any authentication or logging for MCP tools should be handled inside the tool handlers themselves.
-
 
 ## Telemetry and Observability
 

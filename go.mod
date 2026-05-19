@@ -1,6 +1,6 @@
 module github.com/navigacontentlab/dindenault
 
-go 1.23.12
+go 1.25
 
 require (
 	connectrpc.com/connect v1.18.1
