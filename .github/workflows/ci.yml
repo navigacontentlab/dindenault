@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.23.x']
+        go-version: ['1.25.x']
     
     steps:
       - name: Checkout code
@@ -47,7 +47,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.25.x'
           cache: true
 
       - name: Run golangci-lint
@@ -59,7 +59,7 @@ jobs:
   test-otel:
     name: Test otel submodule
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -67,11 +67,31 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.25.x'
           cache: true
 
       - name: Test otel module
         working-directory: ./otel
+        run: |
+          go mod download
+          go test -v -race ./...
+
+  test-xray:
+    name: Test xray submodule
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Test xray module
+        working-directory: ./xray
         run: |
           go mod download
           go test -v -race ./...
