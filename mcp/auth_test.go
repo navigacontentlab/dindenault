@@ -117,7 +117,7 @@ func TestAuthMiddleware_ClaimsInContext(t *testing.T) {
 }
 
 func TestAuthMiddleware_AuthorizationHeaderPreservedForNext(t *testing.T) {
-	const token = "Bearer eyJhbGciOiJSUzI1NiJ9.payload.sig"
+	const token = "Bearer eyJhbGciOiJSUzI1NiJ9.payload.sig" //nolint:gosec
 
 	var gotHeader string
 
@@ -140,7 +140,7 @@ func TestAuthMiddleware_AuthorizationHeaderPreservedForNext(t *testing.T) {
 // the raw token to downstream services like OC or CCA).
 func TestAuthMiddleware_Integration_BothContextValuesAvailable(t *testing.T) {
 	const org = "acme"
-	const token = "Bearer valid.jwt"
+	const token = "Bearer valid.jwt" //nolint:gosec
 
 	var gotOrg, gotRawToken string
 
