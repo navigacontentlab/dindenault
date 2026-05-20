@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -51,13 +50,12 @@ func downstreamServer(t *testing.T) (*httptest.Server, *string) {
 	return srv, &got
 }
 
-// fetchTool creates a tool that calls targetURL using mcp.NewHTTPClient with
-// the provided base RoundTripper (nil → http.DefaultTransport).
+// fetchTool creates a tool that calls targetURL using mcp.NewHTTPClient.
 func fetchTool(targetURL string, base http.RoundTripper) mcp.Tool {
 	return mcp.Tool{
 		Name: "fetch",
 		Handler: func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
-			client := mcp.NewHTTPClient(ctx, base, 5*time.Second)
+			client := mcp.NewHTTPClient(ctx, base)
 
 			resp, err := client.Get(targetURL)
 			if err != nil {
@@ -128,7 +126,7 @@ func TestNewHTTPClient_DoesNotMutateIncomingRequest(t *testing.T) {
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ds.URL, nil)
 			before := req.Header.Get("Authorization")
 
-			client := mcp.NewHTTPClient(ctx, base, 5*time.Second)
+			client := mcp.NewHTTPClient(ctx, base)
 			resp, err := client.Do(req)
 			if err != nil {
 				return nil, err

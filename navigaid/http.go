@@ -3,7 +3,6 @@ package navigaid
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/navigacontentlab/dindenault/internal/httpforward"
 )
@@ -21,14 +20,11 @@ import (
 // or interceptor that calls SetAuth — both MCP (mcp.AuthMiddleware) and
 // ConnectRPC auth interceptors qualify.
 //
-// Typical usage in a ConnectRPC handler calling a downstream service:
+// Set Timeout on the returned client to enforce a request deadline:
 //
-//	func (s *Server) MyRPC(ctx context.Context, req *connect.Request[pb.Req]) (*connect.Response[pb.Resp], error) {
-//	    client := navigaid.NewHTTPClient(ctx, http.DefaultTransport, 15*time.Second)
-//	    resp, err := client.Get("https://oc-service.example.com/api/search")
-//	    ...
-//	}
-func NewHTTPClient(ctx context.Context, base http.RoundTripper, timeout time.Duration) *http.Client {
+//	client := navigaid.NewHTTPClient(ctx, http.DefaultTransport)
+//	client.Timeout = 15 * time.Second
+func NewHTTPClient(ctx context.Context, base http.RoundTripper) *http.Client {
 	token := ""
 
 	if auth, err := GetAuth(ctx); err == nil && auth.AccessToken != "" {
@@ -36,7 +32,6 @@ func NewHTTPClient(ctx context.Context, base http.RoundTripper, timeout time.Dur
 	}
 
 	return &http.Client{
-		Timeout:   timeout,
 		Transport: httpforward.NewTransport(token, base),
 	}
 }

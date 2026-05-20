@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +23,7 @@ func TestNewHTTPClient_ForwardsToken(t *testing.T) {
 	defer ds.Close()
 
 	ctx := navigaid.SetAuth(context.Background(), navigaid.AuthInfo{AccessToken: bareToken}, nil)
-	client := navigaid.NewHTTPClient(ctx, nil, 5*time.Second)
+	client := navigaid.NewHTTPClient(ctx, nil)
 
 	resp, err := client.Get(ds.URL)
 	require.NoError(t, err)
@@ -41,7 +40,7 @@ func TestNewHTTPClient_NoAuth_NoHeader(t *testing.T) {
 	}))
 	defer ds.Close()
 
-	client := navigaid.NewHTTPClient(context.Background(), nil, 5*time.Second)
+	client := navigaid.NewHTTPClient(context.Background(), nil)
 
 	resp, err := client.Get(ds.URL)
 	require.NoError(t, err)
@@ -64,7 +63,7 @@ func TestNewHTTPClient_UsesProvidedBaseTransport(t *testing.T) {
 	defer ds.Close()
 
 	ctx := navigaid.SetAuth(context.Background(), navigaid.AuthInfo{AccessToken: "tok"}, nil) //nolint:gosec
-	client := navigaid.NewHTTPClient(ctx, base, 5*time.Second)
+	client := navigaid.NewHTTPClient(ctx, base)
 
 	resp, err := client.Get(ds.URL)
 	require.NoError(t, err)
@@ -78,7 +77,7 @@ func TestNewHTTPClient_DoesNotMutateRequest(t *testing.T) {
 	defer ds.Close()
 
 	ctx := navigaid.SetAuth(context.Background(), navigaid.AuthInfo{AccessToken: "tok"}, nil) //nolint:gosec
-	client := navigaid.NewHTTPClient(ctx, nil, 5*time.Second)
+	client := navigaid.NewHTTPClient(ctx, nil)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ds.URL, nil)
 	require.NoError(t, err)
