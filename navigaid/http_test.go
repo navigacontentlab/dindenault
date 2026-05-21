@@ -14,7 +14,6 @@ import (
 
 func TestNewHTTPClient_ForwardsToken(t *testing.T) {
 	const bareToken = "eyJhbGciOiJSUzI1NiJ9.payload.sig" //nolint:gosec
-
 	var gotHeader string
 
 	ds := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -27,7 +26,7 @@ func TestNewHTTPClient_ForwardsToken(t *testing.T) {
 
 	resp, err := client.Get(ds.URL)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	assert.Equal(t, "Bearer "+bareToken, gotHeader)
 }
@@ -44,7 +43,7 @@ func TestNewHTTPClient_NoAuth_NoHeader(t *testing.T) {
 
 	resp, err := client.Get(ds.URL)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	assert.Empty(t, gotHeader, "no outbound Authorization header when context carries no auth")
 }
@@ -54,6 +53,7 @@ func TestNewHTTPClient_UsesProvidedBaseTransport(t *testing.T) {
 
 	base := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		baseCalled = true
+
 		return http.DefaultTransport.RoundTrip(r)
 	})
 
@@ -62,21 +62,21 @@ func TestNewHTTPClient_UsesProvidedBaseTransport(t *testing.T) {
 	}))
 	defer ds.Close()
 
-	ctx := navigaid.SetAuth(context.Background(), navigaid.AuthInfo{AccessToken: "tok"}, nil) //nolint:gosec
+	ctx := navigaid.SetAuth(context.Background(), navigaid.AuthInfo{AccessToken: "tok"}, nil)
 	client := navigaid.NewHTTPClient(ctx, base)
 
 	resp, err := client.Get(ds.URL)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	assert.True(t, baseCalled, "provided base RoundTripper must be used")
 }
 
 func TestNewHTTPClient_DoesNotMutateRequest(t *testing.T) {
-	ds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	ds := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	defer ds.Close()
 
-	ctx := navigaid.SetAuth(context.Background(), navigaid.AuthInfo{AccessToken: "tok"}, nil) //nolint:gosec
+	ctx := navigaid.SetAuth(context.Background(), navigaid.AuthInfo{AccessToken: "tok"}, nil)
 	client := navigaid.NewHTTPClient(ctx, nil)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ds.URL, nil)
@@ -86,7 +86,7 @@ func TestNewHTTPClient_DoesNotMutateRequest(t *testing.T) {
 
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	assert.Equal(t, before, req.Header.Get("Authorization"),
 		"transport must clone the request, not mutate the original")

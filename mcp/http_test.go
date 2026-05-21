@@ -3,6 +3,7 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +17,7 @@ import (
 // callThroughMCP dispatches a tools/call to a server built from tool, setting
 // authHeader on the incoming MCP request. It returns the recorder so callers
 // can inspect the JSON-RPC response.
-func callThroughMCP(t *testing.T, tool mcp.Tool, authHeader string) *httptest.ResponseRecorder {
+func callThroughMCP(t *testing.T, tool mcp.Tool, authHeader string) {
 	t.Helper()
 
 	server := mcp.NewServer("test", "0", tool)
@@ -32,7 +33,7 @@ func callThroughMCP(t *testing.T, tool mcp.Tool, authHeader string) *httptest.Re
 	rr := httptest.NewRecorder()
 	server.ServeHTTP(rr, req)
 
-	return rr
+	_ = rr
 }
 
 // downstreamServer returns a test HTTP server and a pointer to the last
@@ -59,10 +60,10 @@ func fetchTool(targetURL string, base http.RoundTripper) mcp.Tool {
 
 			resp, err := client.Get(targetURL)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("get: %w", err)
 			}
 
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			return json.Marshal("ok")
 		},
@@ -94,12 +95,13 @@ func TestNewHTTPClient_UsesProvidedBaseTransport(t *testing.T) {
 
 	base := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		baseCalled = true
+
 		return http.DefaultTransport.RoundTrip(r)
 	})
 
 	ds, _ := downstreamServer(t)
 
-	callThroughMCP(t, fetchTool(ds.URL, base), "Bearer tok") //nolint:gosec
+	callThroughMCP(t, fetchTool(ds.URL, base), "Bearer tok")
 
 	assert.True(t, baseCalled, "provided base RoundTripper must be used, not http.DefaultTransport")
 }
@@ -107,7 +109,7 @@ func TestNewHTTPClient_UsesProvidedBaseTransport(t *testing.T) {
 func TestNewHTTPClient_DoesNotMutateIncomingRequest(t *testing.T) {
 	// Verifies that RoundTrip clones the request before modifying headers,
 	// leaving the original request object intact.
-	const token = "Bearer original" //nolint:gosec
+	const token = "Bearer original"
 
 	var mutated bool
 
@@ -120,7 +122,7 @@ func TestNewHTTPClient_DoesNotMutateIncomingRequest(t *testing.T) {
 	tool := mcp.Tool{
 		Name: "check-mutation",
 		Handler: func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
-			ds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+			ds := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 			defer ds.Close()
 
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ds.URL, nil)
@@ -129,9 +131,9 @@ func TestNewHTTPClient_DoesNotMutateIncomingRequest(t *testing.T) {
 			client := mcp.NewHTTPClient(ctx, base)
 			resp, err := client.Do(req)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("do: %w", err)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			after := req.Header.Get("Authorization")
 			mutated = before != after
