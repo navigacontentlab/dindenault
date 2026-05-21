@@ -53,8 +53,9 @@ func postThrough(t *testing.T, jwks *navigaid.JWKS, authHeader string) (statusCo
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Use tools/call so auth is enforced (tools/list is intentionally public).
 	req := httptest.NewRequest(http.MethodPost, "/mcp",
-		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"x","arguments":{}}}`))
 
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
@@ -80,6 +81,29 @@ func TestAuthMiddleware_InvalidToken_Returns401(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, code)
 	assert.False(t, called, "next must not be called with an invalid token")
+}
+
+func TestAuthMiddleware_DiscoveryMethods_NoAuthRequired(t *testing.T) {
+	for _, method := range []string{"initialize", "notifications/initialized", "tools/list"} {
+		t.Run(method, func(t *testing.T) {
+			var called bool
+
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			})
+
+			body := `{"jsonrpc":"2.0","id":1,"method":"` + method + `","params":{}}`
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+			// Intentionally no Authorization header.
+
+			rr := httptest.NewRecorder()
+			mcp.AuthMiddleware(discardLogger(), validJWKS(), next).ServeHTTP(rr, req)
+
+			assert.Equal(t, http.StatusOK, rr.Code, "method %q should not require auth", method)
+			assert.True(t, called, "next must be called for discovery method %q without a token", method)
+		})
+	}
 }
 
 func TestAuthMiddleware_ValidToken_CallsNext(t *testing.T) {

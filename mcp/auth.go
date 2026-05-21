@@ -1,6 +1,9 @@
 package mcp
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -10,6 +13,10 @@ import (
 // AuthMiddleware validates the incoming JWT before passing the request to the
 // MCP handler. Requests with no token or an invalid token are rejected with
 // HTTP 401 before any tool logic runs.
+//
+// The methods "initialize", "notifications/initialized", and "tools/list" are
+// exempt from authentication — they carry no user data and MCP clients need
+// them for discovery before a token is available.
 //
 // On success the validated claims are placed in the context via
 // navigaid.SetAuth, so tool handlers can call navigaid.GetAuth(ctx) to read
@@ -34,6 +41,31 @@ import (
 //	)
 func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+
+			return
+		}
+
+		// Restore body so the next handler can decode it.
+		r.Body = io.NopCloser(bytes.NewReader(body))
+
+		// Discovery methods are exempt from auth — clients need them before
+		// they have a token.
+		var peek struct {
+			Method string `json:"method"`
+		}
+
+		_ = json.Unmarshal(body, &peek)
+
+		switch peek.Method {
+		case "initialize", "notifications/initialized", "tools/list":
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
 		token, err := navigaid.GetAuthToken(r.Header)
 		if err != nil {
 			logger.Debug("mcp: missing authorization token", "error", err)
