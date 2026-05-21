@@ -109,7 +109,7 @@ func TestInitialize(t *testing.T) {
 
 	result, ok := resp["result"].(map[string]any)
 	require.True(t, ok, "expected result object")
-	assert.Equal(t, "2024-11-05", result["protocolVersion"])
+	assert.Equal(t, "2025-03-26", result["protocolVersion"])
 
 	serverInfo, ok := result["serverInfo"].(map[string]any)
 	require.True(t, ok)

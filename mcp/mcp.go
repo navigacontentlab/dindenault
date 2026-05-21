@@ -56,7 +56,7 @@ const (
 )
 
 // mcpProtocolVersion is the MCP spec version this server targets.
-const mcpProtocolVersion = "2024-11-05"
+const mcpProtocolVersion = "2025-03-26"
 
 // JSON-RPC 2.0 error codes.
 const (
