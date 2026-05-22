@@ -25,5 +25,5 @@ func (t *forwardingTransport) RoundTrip(r *http.Request) (*http.Response, error)
 	r = r.Clone(r.Context())
 	r.Header.Set("Authorization", t.token)
 
-	return t.base.RoundTrip(r)
+	return t.base.RoundTrip(r) //nolint:wrapcheck // RoundTrip errors must not be wrapped; callers inspect the concrete type (e.g. *url.Error)
 }

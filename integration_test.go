@@ -10,6 +10,11 @@ import (
 	"github.com/navigacontentlab/dindenault/cors"
 )
 
+const (
+	testAdminPath       = "/api/admin"
+	testAdminPermission = "admin:access"
+)
+
 // TestCompleteServiceRegistrationFlow tests the complete service registration flow
 // with various handler types, CORS configuration, and PathInterceptors.
 // This validates Requirements 1.1, 1.4, and 2.3.
@@ -89,7 +94,7 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 		// Create app with custom CORS
 		app := dindenault.New(logger,
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".example.com", ".test.com"},
+				AllowedDomains: []string{testWildcardDomain, ".test.com"},
 				AllowHTTP:      true,
 			}),
 			dindenault.WithService("/api/custom", handler),
@@ -168,7 +173,7 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 		app := dindenault.New(logger,
 			dindenault.WithInterceptors(
 				dindenault.LoggingInterceptors(logger),
-				dindenault.CORSInterceptors([]string{".example.com"}, false),
+				dindenault.CORSInterceptors([]string{testWildcardDomain}, false),
 			),
 			dindenault.WithService("/api/intercepted", mockHandler),
 		)
@@ -231,7 +236,7 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 	t.Run("service registration with PathInterceptors", func(t *testing.T) {
 		// Create permission configs
 		permissionConfigs := []dindenault.PathPermissionConfig{
-			{PathPrefix: "/api/admin", Permissions: []string{"admin:access"}},
+			{PathPrefix: testAdminPath, Permissions: []string{testAdminPermission}},
 			{PathPrefix: "/api/user", Permissions: []string{"user:read"}},
 		}
 
@@ -357,7 +362,7 @@ func TestBackwardCompatibilityScenarios(t *testing.T) {
 
 		app := dindenault.New(logger,
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".example.com"},
+				AllowedDomains: []string{testWildcardDomain},
 				AllowHTTP:      false,
 			}),
 			dindenault.WithService("/api/test", handler),
@@ -420,7 +425,7 @@ func TestBackwardCompatibilityScenarios(t *testing.T) {
 	t.Run("complex existing patterns continue to work", func(t *testing.T) {
 		// Complex existing pattern combining multiple features
 		permissionConfigs := []dindenault.PathPermissionConfig{
-			{PathPrefix: "/api/admin", Permissions: []string{"admin:access"}},
+			{PathPrefix: testAdminPath, Permissions: []string{testAdminPermission}},
 		}
 
 		handler := &mockConnectHandler{interceptorsApplied: false}
@@ -511,7 +516,7 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 		// Test with multiple overlapping path prefixes
 		permissionConfigs := []dindenault.PathPermissionConfig{
 			{PathPrefix: "/api", Permissions: []string{"api:access"}},
-			{PathPrefix: "/api/admin", Permissions: []string{"admin:access"}},
+			{PathPrefix: testAdminPath, Permissions: []string{testAdminPermission}},
 			{PathPrefix: "/api/admin/users", Permissions: []string{"users:manage"}},
 			{PathPrefix: "/api/public", Permissions: []string{}}, // No permissions required
 		}
@@ -563,7 +568,7 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 
 		app := dindenault.New(logger,
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".example.com"},
+				AllowedDomains: []string{testWildcardDomain},
 				AllowHTTP:      false,
 			}),
 			dindenault.WithService("/api/test", handler),
@@ -593,7 +598,7 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 
 		app := dindenault.New(logger,
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".example.com"},
+				AllowedDomains: []string{testWildcardDomain},
 				AllowHTTP:      false,
 			}),
 			dindenault.WithService("/api/test", handler),
@@ -623,7 +628,7 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 
 		app := dindenault.New(logger,
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".example.com"},
+				AllowedDomains: []string{testWildcardDomain},
 				AllowHTTP:      false,
 			}),
 			dindenault.WithConnectRPC(cors.Options{

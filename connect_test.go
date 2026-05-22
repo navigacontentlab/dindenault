@@ -12,6 +12,11 @@ import (
 	"github.com/navigacontentlab/dindenault/cors"
 )
 
+const (
+	testDomain         = "example.com"
+	testWildcardDomain = ".example.com"
+)
+
 func TestWithInterceptors(t *testing.T) {
 	// Create a test Logger
 	logger := slog.Default()
@@ -82,13 +87,13 @@ func TestCORSInterceptors(t *testing.T) {
 
 	t.Run("function works with different configurations", func(t *testing.T) {
 		// Test with HTTP allowed
-		interceptor1 := dindenault.CORSInterceptors([]string{"example.com"}, true)
+		interceptor1 := dindenault.CORSInterceptors([]string{testDomain}, true)
 		if interceptor1 == nil {
 			t.Error("CORSInterceptors with allowHTTP=true returned nil")
 		}
 
 		// Test with multiple origins
-		interceptor2 := dindenault.CORSInterceptors([]string{"example.com", "test.com"}, false)
+		interceptor2 := dindenault.CORSInterceptors([]string{testDomain, "test.com"}, false)
 		if interceptor2 == nil {
 			t.Error("CORSInterceptors with multiple origins returned nil")
 		}
@@ -154,7 +159,7 @@ func TestWithConnectRPC(t *testing.T) {
 
 		// Apply WithConnectRPC with custom domains
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{"example.com"},
+			AllowedDomains: []string{testDomain},
 			AllowHTTP:      false,
 		})(app)
 
@@ -171,7 +176,7 @@ func TestWithConnectRPC(t *testing.T) {
 
 		// Apply WithConnectRPC
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{"example.com"},
+			AllowedDomains: []string{testDomain},
 			AllowHTTP:      false,
 		})(app)
 
@@ -213,7 +218,7 @@ func TestWithConnectRPC(t *testing.T) {
 
 		// Apply WithConnectRPC
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{".example.com"},
+			AllowedDomains: []string{testWildcardDomain},
 			AllowHTTP:      false,
 		})(app)
 
@@ -267,7 +272,7 @@ func TestWithConnectRPC(t *testing.T) {
 
 		// Apply WithConnectRPC
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{".example.com"},
+			AllowedDomains: []string{testWildcardDomain},
 			AllowHTTP:      false,
 		})(app)
 
@@ -294,7 +299,7 @@ func TestWithConnectRPC(t *testing.T) {
 
 		// Apply WithConnectRPC
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{".example.com"},
+			AllowedDomains: []string{testWildcardDomain},
 			AllowHTTP:      false,
 		})(app)
 
@@ -321,7 +326,7 @@ func TestWithConnectRPC(t *testing.T) {
 
 		// Apply WithConnectRPC with specific allowed domain
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{".example.com"},
+			AllowedDomains: []string{testWildcardDomain},
 			AllowHTTP:      false,
 		})(app)
 
@@ -347,7 +352,7 @@ func TestWithConnectRPC(t *testing.T) {
 		app := dindenault.New(logger)
 
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{".example.com"},
+			AllowedDomains: []string{testWildcardDomain},
 			AllowHTTP:      false,
 		})(app)
 
@@ -372,7 +377,7 @@ func TestWithConnectRPC(t *testing.T) {
 		app := dindenault.New(logger)
 
 		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{".example.com"},
+			AllowedDomains: []string{testWildcardDomain},
 			AllowHTTP:      true,
 		})(app)
 
@@ -597,7 +602,7 @@ func TestWithService(t *testing.T) {
 		app := dindenault.New(logger,
 			dindenault.WithInterceptors(
 				dindenault.LoggingInterceptors(logger),
-				dindenault.CORSInterceptors([]string{".example.com"}, false),
+				dindenault.CORSInterceptors([]string{testWildcardDomain}, false),
 			),
 		)
 
@@ -619,7 +624,7 @@ func TestWithService(t *testing.T) {
 		// Create a test app with CORS and service registration
 		app := dindenault.New(logger,
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".example.com"},
+				AllowedDomains: []string{testWildcardDomain},
 				AllowHTTP:      false,
 			}),
 		)
@@ -649,7 +654,7 @@ func TestWithService(t *testing.T) {
 				dindenault.LoggingInterceptors(logger),
 			),
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".example.com"},
+				AllowedDomains: []string{testWildcardDomain},
 				AllowHTTP:      false,
 			}),
 		)

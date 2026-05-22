@@ -13,6 +13,8 @@ import (
 	awsevents "github.com/aws/aws-lambda-go/events"
 )
 
+const apiGatewayV2 = "2.0"
+
 // RequestContext combines the relevant fields from ALB and API Gateway contexts.
 type RequestContext struct {
 	// API Gateway fields
@@ -69,7 +71,7 @@ func FromALBRequest(alb awsevents.ALBTargetGroupRequest) Request {
 // FromAPIGatewayRequest converts an API Gateway request to a generic Request.
 func FromAPIGatewayRequest(apigw awsevents.APIGatewayV2HTTPRequest) Request {
 	req := Request{
-		Version:         "2.0",
+		Version:         apiGatewayV2,
 		Path:            apigw.RawPath,
 		HTTPMethod:      apigw.RequestContext.HTTP.Method,
 		Headers:         apigw.Headers,
@@ -102,7 +104,7 @@ type Response struct {
 // AWSRequestToHTTPRequest converts an AWS Lambda request to a standard HTTP request.
 func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request, error) {
 	HTTPMethod := event.HTTPMethod
-	if event.Version == "2.0" {
+	if event.Version == apiGatewayV2 {
 		HTTPMethod = event.RequestContext.HTTP.Method
 	}
 
@@ -133,7 +135,7 @@ func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request,
 		RawPath:  event.Path,
 		RawQuery: params.Encode(),
 	}
-	if event.Version == "2.0" {
+	if event.Version == apiGatewayV2 {
 		u.RawPath = event.RawPath
 		u.RawQuery = event.RawQueryString
 	}
