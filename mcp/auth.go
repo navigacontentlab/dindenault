@@ -10,6 +10,23 @@ import (
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
 
+// AuthOption configures optional behaviour of AuthMiddleware.
+type AuthOption func(*authConfig)
+
+type authConfig struct {
+	publicTools map[string]struct{}
+}
+
+// WithPublicTools marks the named tools as exempt from authentication.
+// A tools/call request for any listed tool is passed through without a JWT.
+func WithPublicTools(names ...string) AuthOption {
+	return func(c *authConfig) {
+		for _, n := range names {
+			c.publicTools[n] = struct{}{}
+		}
+	}
+}
+
 // AuthMiddleware validates the incoming JWT before passing the request to the
 // MCP handler. Requests with no token or an invalid token are rejected with
 // HTTP 401 before any tool logic runs.
@@ -17,6 +34,10 @@ import (
 // The methods "initialize", "notifications/initialized", and "tools/list" are
 // exempt from authentication — they carry no user data and MCP clients need
 // them for discovery before a token is available.
+//
+// Use WithPublicTools to additionally exempt specific tools from authentication:
+//
+//	mcp.AuthMiddleware(logger, jwks, server, mcp.WithPublicTools("get_search_fields"))
 //
 // On success the validated claims are placed in the context via
 // navigaid.SetAuth, so tool handlers can call navigaid.GetAuth(ctx) to read
@@ -39,7 +60,13 @@ import (
 //	app := dindenault.New(logger,
 //	    dindenault.WithService("/mcp", mcp.AuthMiddleware(logger, jwks, server)),
 //	)
-func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler) http.Handler {
+func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler, opts ...AuthOption) http.Handler {
+	cfg := &authConfig{publicTools: make(map[string]struct{})}
+
+	for _, o := range opts {
+		o(cfg)
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -55,6 +82,9 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler)
 		// they have a token.
 		var peek struct {
 			Method string `json:"method"`
+			Params struct {
+				Name string `json:"name"`
+			} `json:"params"`
 		}
 
 		_ = json.Unmarshal(body, &peek)
@@ -64,6 +94,12 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler)
 			next.ServeHTTP(w, r)
 
 			return
+		case "tools/call":
+			if _, ok := cfg.publicTools[peek.Params.Name]; ok {
+				next.ServeHTTP(w, r)
+
+				return
+			}
 		}
 
 		token, err := navigaid.GetAuthToken(r.Header)

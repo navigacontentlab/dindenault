@@ -162,6 +162,32 @@ func TestAuthMiddleware_AuthorizationHeaderPreservedForNext(t *testing.T) {
 // AuthMiddleware wraps a real MCP server, tool handlers can use both
 // navigaid.GetAuth (for claims) and mcp.AuthorizationFromContext (for forwarding
 // the raw token to downstream services like OC or CCA).
+func TestAuthMiddleware_PublicTool_NoAuthRequired(t *testing.T) {
+	var called bool
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_search_fields","arguments":{}}}`))
+	// Intentionally no Authorization header.
+
+	rr := httptest.NewRecorder()
+	mcp.AuthMiddleware(discardLogger(), validJWKS(), next, mcp.WithPublicTools("get_search_fields")).ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.True(t, called, "public tool must not require auth")
+}
+
+func TestAuthMiddleware_NonPublicTool_AuthRequired(t *testing.T) {
+	code, called := postThrough(t, validJWKS(), "") // no token, tool "x" is not public
+
+	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.False(t, called, "non-public tool must still require auth")
+}
+
 func TestAuthMiddleware_Integration_BothContextValuesAvailable(t *testing.T) {
 	const org = "acme"
 	const token = "Bearer valid.jwt" //nolint:gosec
