@@ -3,14 +3,11 @@ package interceptors
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
-
-	"github.com/navigacontentlab/dindenault/cors"
 )
 
 // ExtractServiceAndMethod extracts the service name and method name from a Connect RPC procedure path.
@@ -86,53 +83,6 @@ func Logging(logger *slog.Logger) connect.Interceptor {
 			}
 
 			return resp, err
-		}
-	})
-}
-
-// CORS creates a Connect interceptor that handles Cross-Origin Resource Sharing (CORS).
-// Unlike other interceptors, CORS works at the HTTP header level, so this interceptor
-// adds appropriate CORS headers to the response headers.
-//
-// Note: prefer cors.Middleware (applied by dindenault.WithConnectRPC), which
-// also handles preflight requests and works for any http.Handler.
-//
-//nolint:ireturn
-func CORS(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
-	// Use the standardAllowOriginFunc from cors.go for consistency
-	originValidator := cors.StandardAllowOriginFunc(allowHTTP, allowedOrigins)
-	wildcard := cors.HasWildcard(allowedOrigins)
-
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Get origin from request
-			origin := req.Header().Get("Origin")
-			if origin == "" {
-				// No origin, no CORS headers needed
-				return next(ctx, req)
-			}
-
-			// If origin is not allowed, continue without CORS headers
-			if !originValidator(origin) {
-				return next(ctx, req)
-			}
-
-			// Call the next handler to get the response
-			resp, err := next(ctx, req)
-			if err != nil {
-				// If there was an error, we still need to add CORS headers to the error response
-				var connectErr *connect.Error
-				if errors.As(err, &connectErr) {
-					cors.SetHeaders(connectErr.Meta(), origin, wildcard)
-				}
-
-				return nil, err
-			}
-
-			// Add CORS headers to the response
-			cors.SetHeaders(resp.Header(), origin, wildcard)
-
-			return resp, nil
 		}
 	})
 }

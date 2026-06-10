@@ -14,6 +14,7 @@ const (
 	testAdminPath       = "/api/admin"
 	testAdminPermission = "admin:access"
 	testDotTestDomain   = ".test.com"
+	testAPIPermission   = "api:access"
 )
 
 // TestCompleteServiceRegistrationFlow tests the complete service registration flow
@@ -178,10 +179,14 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 		mockHandler := &mockConnectHandler{interceptorsApplied: false}
 
 		// Create app with global interceptors
+		permissionConfigs := []dindenault.PathPermissionConfig{
+			{PathPrefix: "/api/intercepted", Permissions: []string{testAPIPermission}},
+		}
+
 		app := dindenault.New(logger,
 			dindenault.WithInterceptors(
 				dindenault.LoggingInterceptors(logger),
-				dindenault.CORSInterceptors([]string{testWildcardDomain}, false),
+				dindenault.PathInterceptors(logger, permissionConfigs),
 			),
 			dindenault.WithService("/api/intercepted", mockHandler),
 		)
@@ -527,7 +532,7 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 	t.Run("complex PathInterceptor configurations", func(t *testing.T) {
 		// Test with multiple overlapping path prefixes
 		permissionConfigs := []dindenault.PathPermissionConfig{
-			{PathPrefix: "/api", Permissions: []string{"api:access"}},
+			{PathPrefix: "/api", Permissions: []string{testAPIPermission}},
 			{PathPrefix: testAdminPath, Permissions: []string{testAdminPermission}},
 			{PathPrefix: "/api/admin/users", Permissions: []string{"users:manage"}},
 			{PathPrefix: "/api/public", Permissions: []string{}}, // No permissions required
@@ -729,7 +734,7 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 	t.Run("PathInterceptors with nil logger", func(t *testing.T) {
 		// Test PathInterceptors with nil logger (should not panic)
 		permissionConfigs := []dindenault.PathPermissionConfig{
-			{PathPrefix: "/api", Permissions: []string{"api:access"}},
+			{PathPrefix: "/api", Permissions: []string{testAPIPermission}},
 		}
 
 		// This should not panic

@@ -65,6 +65,13 @@ func TelemetryInterceptor(logger *slog.Logger, provider TelemetryProvider, opts 
 }
 
 // WithTelemetry configures telemetry for the App.
+//
+// The provider's interceptor is applied to registered handlers that
+// implement ConnectHandlerWithInterceptor. Telemetry is best-effort:
+// for handlers that cannot receive interceptors a warning is logged
+// (unlike WithInterceptors, which fails fast, since missing telemetry
+// is not a security risk). Handlers registered with WithPlainService,
+// WithMCP, or WithMCPAuth are skipped.
 func WithTelemetry(provider TelemetryProvider, opts TelemetryOptions) Option {
 	return func(a *App) {
 		a.telemetryProvider = provider
@@ -78,19 +85,6 @@ func WithNoopTelemetry() Option {
 		a.telemetryProvider = NoopTelemetry{}
 		a.telemetryOptions = DefaultTelemetryOptions()
 	}
-}
-
-// CORSInterceptors returns CORS interceptors for Connect RPC.
-// This creates interceptors that add CORS headers to Connect RPC responses.
-//
-// Prefer WithConnectRPC, which applies CORS at the HTTP level for all
-// registered handlers and also answers preflight requests. Use this
-// interceptor only when you need CORS on a single handler created with
-// connect.WithInterceptors.
-//
-//nolint:ireturn // Returning interface as intended by connect.Interceptor design
-func CORSInterceptors(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
-	return interceptors.CORS(allowedOrigins, allowHTTP)
 }
 
 // AuthInterceptors returns authentication interceptors for Connect RPC.
@@ -108,83 +102,6 @@ func AuthInterceptors(logger *slog.Logger, imasURL string) connect.Interceptor {
 	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL))
 
 	return navigaid.ConnectInterceptor(logger, jwks)
-}
-
-// ConnectOptions configures Connect RPC services.
-type ConnectOptions struct {
-	RequiredPermissions []string
-	UnitPermissions     map[string][]string
-}
-
-// ConnectOption is a function that configures ConnectOptions.
-type ConnectOption func(*ConnectOptions)
-
-// WithRequiredPermissions adds required permissions.
-func WithRequiredPermissions(permissions ...string) ConnectOption {
-	return func(opts *ConnectOptions) {
-		opts.RequiredPermissions = append(opts.RequiredPermissions, permissions...)
-	}
-}
-
-// WithUnitPermissions adds unit-specific permissions.
-func WithUnitPermissions(unit string, permissions ...string) ConnectOption {
-	return func(opts *ConnectOptions) {
-		if opts.UnitPermissions == nil {
-			opts.UnitPermissions = make(map[string][]string)
-		}
-
-		opts.UnitPermissions[unit] = append(opts.UnitPermissions[unit], permissions...)
-	}
-}
-
-// NewConnectHandler creates a handler for Connect RPC with authentication.
-// It automatically adds authentication and permission interceptors based on the options.
-func NewConnectHandler(
-	logger *slog.Logger,
-	jwks *navigaid.JWKS,
-	handler http.Handler,
-	options ...ConnectOption,
-) http.Handler {
-	// Process options
-	opts := &ConnectOptions{}
-	for _, opt := range options {
-		opt(opts)
-	}
-
-	// Log options for debugging
-	logger.Debug("Creating Connect handler with authentication",
-		"permissions", opts.RequiredPermissions,
-		"unit_permissions", opts.UnitPermissions)
-
-	// If the handler implements the ConnectHandlerWithInterceptor interface,
-	// we can apply our interceptors
-	if interceptorHandler, ok := handler.(ConnectHandlerWithInterceptor); ok {
-		// Create interceptors
-		var interceptorsList []connect.Interceptor
-
-		// Add authentication interceptor
-		interceptorsList = append(interceptorsList, navigaid.ConnectInterceptor(logger, jwks))
-
-		// Add permission interceptors
-		for _, permission := range opts.RequiredPermissions {
-			interceptorsList = append(interceptorsList, navigaid.RequirePermission(logger, permission))
-		}
-
-		// Add unit permission interceptors
-		for unit, permissions := range opts.UnitPermissions {
-			for _, permission := range permissions {
-				interceptorsList = append(interceptorsList, navigaid.RequireUnitPermission(logger, unit, permission))
-			}
-		}
-
-		// Create a new handler with interceptors
-		return interceptorHandler.WithInterceptors(interceptorsList...)
-	}
-
-	// If the handler doesn't implement the interface, log a warning
-	logger.Warn("Handler does not implement ConnectHandlerWithInterceptor, interceptors not applied")
-
-	return handler
 }
 
 // ConnectHandlerWithInterceptor is an interface for Connect handlers that support interceptors.
