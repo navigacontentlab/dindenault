@@ -187,6 +187,14 @@ func (a *App) prepareHandlers() {
 			return len(a.registrations[i].Path) > len(a.registrations[j].Path)
 		})
 
+		// Resolve the telemetry interceptor once. Telemetry is
+		// best-effort: unlike auth interceptors, a missing telemetry
+		// interceptor is logged rather than treated as fatal.
+		var telemetryInterceptor connect.Interceptor
+		if a.telemetryProvider != nil {
+			telemetryInterceptor = a.telemetryProvider.Interceptor(a.logger, a.telemetryOptions)
+		}
+
 		for i, reg := range a.registrations {
 			handler := reg.Handler
 
@@ -206,6 +214,17 @@ func (a *App) prepareHandlers() {
 				}
 
 				handler = interceptorHandler.WithInterceptors(a.globalInterceptors...)
+			}
+
+			// Apply the telemetry interceptor configured via WithTelemetry.
+			if telemetryInterceptor != nil && !reg.SkipGlobalInterceptors {
+				if interceptorHandler, ok := handler.(ConnectHandlerWithInterceptor); ok {
+					handler = interceptorHandler.WithInterceptors(telemetryInterceptor)
+				} else {
+					a.logger.Warn("telemetry interceptor not applied; "+
+						"handler does not implement ConnectHandlerWithInterceptor",
+						"path", reg.Path)
+				}
 			}
 
 			// Apply CORS at the HTTP level so it works for every handler,

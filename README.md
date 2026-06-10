@@ -6,6 +6,7 @@ Dindenault provides a framework for building Connect RPC services in AWS Lambda.
 
 - [Features](#features)
 - [Core Concepts](#core-concepts)
+- [Security Model](#security-model)
 - [Getting Started](#getting-started)
 - [Working with Connect Handlers](#working-with-connect-handlers)
 - [Interceptor Architecture](#interceptor-architecture)
@@ -19,6 +20,8 @@ Dindenault provides a framework for building Connect RPC services in AWS Lambda.
 - [Advanced Features](#advanced-features)
 - [Releasing](#releasing)
 - [Contributing](#contributing)
+
+Upgrading from an earlier version? See [MIGRATION.md](./MIGRATION.md).
 
 ## Features
 
@@ -84,6 +87,57 @@ app := dindenault.New(logger,
     dindenault.WithService(path, handler),
 )
 ```
+
+## Security Model
+
+A short summary of what dindenault does — and does not — handle for you.
+
+### What token validation checks
+
+`AuthInterceptors`, `navigaid.HTTPMiddleware`, and `mcp.AuthMiddleware`
+all validate JWTs against the IMAS JWKS endpoint. A token is accepted
+only if all of the following hold:
+
+- Signed with RSA (`RS256`/`RS384`/`RS512`) by a key published in the JWKS, matched via the `kid` header
+- The token's `alg` matches the algorithm declared for that key
+- Not expired — the `exp` claim is **required**; `nbf`/`iat` are honored when present
+- The Naviga token type (`ntt` claim) matches (`access_token`)
+- Issuer and audience match, **if** configured via `navigaid.WithExpectedIssuer` / `navigaid.WithExpectedAudience` (opt-in — enable these where possible)
+
+JWKS keys are cached (10 min TTL). If a refresh fails, previously
+fetched keys are used and the fetch retried after 30 s, so a brief IMAS
+outage does not fail all authentication. All outbound auth HTTP calls
+have a 10 s timeout.
+
+### Fail-fast philosophy
+
+Misconfiguration fails at startup, not silently at runtime: an empty
+IMAS URL panics, and app-level interceptors that cannot be applied to a
+handler panic (see [Interceptor Architecture](#interceptor-architecture)).
+A service that starts is a service whose auth is wired up.
+
+### What you are responsible for
+
+- **Authorization** — authentication only proves identity. Enforce
+  permissions with `PathInterceptors`, `navigaid.RequirePermission`,
+  `Tool.RequiredPermissions` (MCP), or explicit checks
+  (`dindenault.HasPermission`, `HasPermissionInUnit`) in your handlers.
+- **Unmatched paths** — `PathInterceptors`/`WithPathPermissionService`
+  pass requests through when no `PathPrefix` matches. Add a catch-all
+  config if every path must require a permission.
+- **MCP discovery is public** — `initialize` and `tools/list` respond
+  without authentication (clients need them before they have a token),
+  so tool names and descriptions are visible. `tools/call` requires
+  auth unless a tool is listed in `WithPublicTools`.
+- **Permission scope** — org-level checks (`HasPermission`) are not
+  satisfied by unit-scoped grants. Be deliberate about which scope a
+  feature requires.
+
+### Logging
+
+Request logging redacts `Authorization`, `x-imid-token`, `Cookie`, and
+`Proxy-Authorization`. HTTP 500 responses contain a generic message;
+details go to the log only.
 
 ## Getting Started
 
@@ -253,8 +307,11 @@ Dindenault's architecture is built around Connect interceptors. All cross-cuttin
 
 - **`LoggingInterceptors(logger)`**: Adds request logging with timing information
 - **`TelemetryInterceptor(logger, provider, opts)`**: Adds optional telemetry (see [Telemetry](#telemetry-and-observability))
-- **`CORSInterceptors(allowedOrigins, allowHTTP)`**: Adds CORS support
 - **`AuthInterceptors(logger, imasURL)`**: Adds Naviga ID authentication
+- **`PathInterceptors(logger, configs)`**: Adds method-level permission checks
+
+(`CORSInterceptors` is deprecated — use `WithConnectRPC`, which applies CORS
+at the HTTP level including preflight handling.)
 
 For AWS X-Ray tracing, use the [`xray` submodule](./xray/README.md):
 
@@ -287,24 +344,24 @@ that implement `ConnectHandlerWithInterceptor`; the app refuses to start
 
 You can apply interceptors at two levels:
 
-1. **Global interceptors** applied to all services:
-   ```go
-   app := dindenault.New(logger,
-       dindenault.WithInterceptors(
-           dindenault.LoggingInterceptors(logger),
-       ),
-   )
-   ```
-
-2. **Handler-specific interceptors** applied when creating the handler:
+1. **Handler-specific interceptors** (recommended) applied when creating the handler:
    ```go
    path, handler := servicev1connect.NewServiceHandler(
        impl,
        connect.WithInterceptors(
-           specificInterceptor,
+           dindenault.LoggingInterceptors(logger),
+           dindenault.AuthInterceptors(logger, imasURL),
        ),
    )
    ```
+
+2. **App-level interceptors** via `dindenault.WithInterceptors`. These only
+   work for handlers that implement `ConnectHandlerWithInterceptor` —
+   standard connect-go generated handlers do **not**. If the app cannot
+   apply configured interceptors to a registered handler it panics at
+   startup rather than silently running without them. Use
+   `WithPlainService` for handlers that intentionally should not receive
+   interceptors.
 
 ### Interceptor Chaining
 
@@ -477,9 +534,13 @@ app := dindenault.New(logger,
 )
 ```
 
-### Using NewConnectHandler
+### Using NewConnectHandler (Deprecated)
 
-For more control, use the `NewConnectHandler` utility which adds authentication and permissions checks to a specific handler:
+> **Deprecated:** `NewConnectHandler` only works with handlers that
+> implement `ConnectHandlerWithInterceptor`, which connect-go generated
+> handlers do not. Pass `AuthInterceptors`, `navigaid.RequirePermission`,
+> and `navigaid.RequireUnitPermission` via `connect.WithInterceptors` at
+> handler creation instead.
 
 ```go
 // Create the JWKS for token validation
@@ -672,11 +733,16 @@ app := dindenault.New(logger,
 )
 ```
 
-When enabled, `WithConnectRPC` automatically:
-1. Adds CORS headers to all Connect RPC responses via an interceptor
-2. Handles OPTIONS preflight requests correctly for all registered services
+When enabled, `WithConnectRPC` wraps every registered handler in an
+HTTP-level CORS middleware that automatically:
+1. Adds CORS headers to all responses (including error responses)
+2. Answers OPTIONS preflight requests (`204 No Content`) before they reach your handler
 3. Validates origins against the allowed list
 4. Uses Connect RPC appropriate headers and methods
+
+Requests without an `Origin` header, or from origins that are not
+allowed, are passed through without CORS headers — the browser then
+blocks the cross-origin read.
 
 ### Configuration Options
 
@@ -741,20 +807,25 @@ app := dindenault.New(logger,
 
 ### CORS Headers
 
-When CORS is enabled, the following headers are automatically added:
+When CORS is enabled, the following headers are automatically added for
+allowed origins:
 
 - `Access-Control-Allow-Origin`: The validated origin from the request
-- `Access-Control-Allow-Methods`: `POST, OPTIONS` (Connect RPC methods)
-- `Access-Control-Allow-Headers`: `Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With`
-- `Access-Control-Allow-Credentials`: `true`
+- `Access-Control-Allow-Methods`: `POST, GET, OPTIONS`
+- `Access-Control-Allow-Headers`: `Content-Type, Accept, Connect-Protocol-Version, Connect-Timeout-Ms, Authorization, X-Requested-With`
+- `Access-Control-Allow-Credentials`: `true` — **omitted** when `AllowedDomains` contains `"*"`, since reflecting arbitrary origins with credentials would disable the browser's same-origin protections
 - `Access-Control-Max-Age`: `86400` (24 hours, for preflight requests)
+- `Vary: Origin`
 
 ### Domain Matching Rules
 
-- **Exact match**: `"app.example.com"` matches only `https://app.example.com`
-- **Suffix match**: `".example.com"` matches `https://app.example.com`, `https://api.example.com`, etc.
-- **Wildcard**: `"*"` matches any origin (use with caution)
-- **Protocol**: HTTP origins are only allowed when `AllowHTTP: true`
+The `Origin` header is parsed as a URL and its hostname is matched on
+label boundaries:
+
+- **Domain + subdomains**: `"example.com"` (with or without a leading dot) matches `https://example.com` and `https://app.example.com`, but never `https://evilexample.com`
+- **Wildcard**: `"*"` matches any origin (credentials are disabled; use with caution)
+- **Protocol**: HTTP origins are only allowed when `AllowHTTP: true`; only `http`/`https` schemes are accepted
+- **Ports**: ignored — `https://app.example.com:8443` matches `"example.com"`
 
 ## MCP (Model Context Protocol) Support
 
@@ -818,18 +889,39 @@ lambda.Start(app.Handle())
 
 ### Tool Definition
 
-Each `mcp.Tool` has four fields:
-
 ```go
 type Tool struct {
-    Name        string          // Tool identifier shown to the AI model
-    Description string          // Explains what the tool does — shown to the model
-    InputSchema json.RawMessage // JSON Schema for the arguments (optional)
-    Handler     ToolHandler     // func(ctx, json.RawMessage) (json.RawMessage, error)
+    Name                string          // Tool identifier shown to the AI model
+    Description         string          // Explains what the tool does — shown to the model
+    InputSchema         json.RawMessage // JSON Schema for the arguments (optional)
+    RequiredPermissions []string        // Org-level permissions required to call the tool (optional)
+    Handler             ToolHandler     // func(ctx, json.RawMessage) (json.RawMessage, error)
 }
 ```
 
 If `InputSchema` is `nil`, the server defaults to `{"type":"object","properties":{}}`.
+
+### Per-Tool Authorization
+
+`RequiredPermissions` enforces organization-level permissions per tool.
+The check runs against the validated claims that `mcp.AuthMiddleware`
+(used by `WithMCPAuth`) places in the context:
+
+```go
+mcp.Tool{
+    Name:                "write_document",
+    Description:         "Create or update a document",
+    RequiredPermissions: []string{"content:write"},
+    Handler:             writeDocument,
+}
+```
+
+Calls without validated auth information, or from callers missing any of
+the listed permissions, are rejected with a JSON-RPC error before the
+handler runs. A tool with `RequiredPermissions` therefore cannot be
+exposed unauthenticated by accident. Tools without `RequiredPermissions`
+are responsible for their own authorization (e.g. via
+`navigaid.GetAuth` or `dindenault.HasPermission`).
 
 ### Authentication Pass-Through
 
@@ -841,6 +933,13 @@ func myHandler(ctx context.Context, input json.RawMessage) (json.RawMessage, err
     // Forward token to downstream APIs
 }
 ```
+
+If no raw header was captured, the function reconstructs the bearer
+token from validated auth information in the context (set by
+`mcp.AuthMiddleware`, `navigaid.HTTPMiddleware`, or a navigaid Connect
+interceptor) — so it works with any of dindenault's authentication
+entry points. `mcp.NewHTTPClient(ctx, base)` gives you an `http.Client`
+that forwards the token automatically.
 
 ### Tool Errors
 
@@ -859,7 +958,13 @@ app := dindenault.New(logger,
 
 ### Note on Global Interceptors
 
-Connect interceptors registered with `WithInterceptors` are not applied to MCP handlers, since they operate at the Connect RPC layer. Any authentication or logging for MCP tools should be handled inside the tool handlers themselves.
+MCP handlers are plain HTTP handlers and are automatically registered
+with `SkipGlobalInterceptors` — Connect interceptors registered with
+`WithInterceptors` are never applied to them, and do not cause the
+startup panic described in [Interceptor Architecture](#interceptor-architecture).
+Authentication is handled by `WithMCPAuth`/`mcp.AuthMiddleware`, and
+authorization per tool via `RequiredPermissions` or inside the tool
+handlers themselves.
 
 ## Telemetry and Observability
 

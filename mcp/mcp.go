@@ -46,6 +46,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/navigacontentlab/dindenault/navigaid"
 )
 
 // contextKey is an unexported type for context keys in this package.
@@ -63,17 +65,31 @@ const (
 	codeParseError     = -32700
 	codeInvalidParams  = -32602
 	codeMethodNotFound = -32601
+
+	// codePermissionDenied is in the JSON-RPC implementation-defined
+	// server error range (-32000 to -32099).
+	codePermissionDenied = -32001
 )
 
 // defaultInputSchema is used when a Tool does not specify an InputSchema.
 var defaultInputSchema = json.RawMessage(`{"type":"object","properties":{}}`)
 
 // AuthorizationFromContext retrieves the raw Authorization header value
-// (e.g. "Bearer eyJ...") from the context.  Returns an empty string if
+// (e.g. "Bearer eyJ...") from the context. Returns an empty string if
 // not present.
+//
+// If no raw header was captured but the context carries validated auth
+// information (set by mcp.AuthMiddleware, navigaid.HTTPMiddleware, or a
+// navigaid Connect interceptor), the bearer token is reconstructed from
+// it. This makes the function work with any of dindenault's
+// authentication entry points.
 func AuthorizationFromContext(ctx context.Context) string {
-	if v, ok := ctx.Value(authorizationKey).(string); ok {
+	if v, ok := ctx.Value(authorizationKey).(string); ok && v != "" {
 		return v
+	}
+
+	if auth, err := navigaid.GetAuth(ctx); err == nil && auth.AccessToken != "" {
+		return "Bearer " + auth.AccessToken
 	}
 
 	return ""
@@ -98,6 +114,17 @@ type Tool struct {
 	// InputSchema is a JSON Schema object that describes the tool's arguments.
 	// If nil, defaults to {"type":"object","properties":{}}.
 	InputSchema json.RawMessage
+
+	// RequiredPermissions lists organization-level permissions that the
+	// authenticated caller must hold for the tool to be invoked. The
+	// check uses the validated claims placed in the context by
+	// mcp.AuthMiddleware (i.e. WithMCPAuth). If permissions are listed
+	// but the request carries no validated auth information, the call
+	// is rejected — so a tool with RequiredPermissions cannot
+	// accidentally be exposed unauthenticated.
+	//
+	// Leave empty to handle authorization in the Handler itself.
+	RequiredPermissions []string
 
 	// Handler is invoked when the tool is called.
 	Handler ToolHandler
@@ -210,6 +237,23 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		writeError(w, req.ID, codeInvalidParams, fmt.Sprintf("Unknown tool: %q", params.Name))
 
 		return
+	}
+
+	if len(tool.RequiredPermissions) > 0 {
+		authInfo, err := navigaid.GetAuth(ctx)
+		if err != nil {
+			writeError(w, req.ID, codePermissionDenied,
+				fmt.Sprintf("Tool %q requires authentication", params.Name))
+
+			return
+		}
+
+		if !authInfo.Claims.HasPermissionsInOrganisation(tool.RequiredPermissions...) {
+			writeError(w, req.ID, codePermissionDenied,
+				fmt.Sprintf("Tool %q requires permissions: %v", params.Name, tool.RequiredPermissions))
+
+			return
+		}
 	}
 
 	args := params.Arguments

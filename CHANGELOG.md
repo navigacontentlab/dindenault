@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `mcp.Tool.RequiredPermissions` — per-tool organization-level permission
+  checks enforced by the MCP server before the handler runs. Tools with
+  requirements reject unauthenticated calls.
+- `MIGRATION.md` with a 1.3 → 1.4 upgrade guide.
+- "Security Model" section in README documenting JWT validation rules,
+  fail-fast behavior, and the caller's authorization responsibilities.
+- Godoc examples (`example_test.go`).
+
+### Changed
+- `mcp.AuthorizationFromContext` falls back to reconstructing the bearer
+  token from validated `navigaid` auth info in the context, unifying the
+  two token channels — it now works with any of dindenault's
+  authentication entry points.
+- `WithTelemetry` now actually applies the provider's interceptor to
+  handlers that support interceptors (previously the stored provider was
+  never used by the App). Best-effort: a warning is logged for handlers
+  that cannot receive it.
+
+### Deprecated
+- `NewConnectHandler`, `ConnectOptions`, `ConnectOption`,
+  `WithRequiredPermissions`, `WithUnitPermissions` — pass interceptors at
+  handler creation with `connect.WithInterceptors` instead.
+- `CORSInterceptors` — use `WithConnectRPC` (HTTP-level CORS middleware
+  with preflight handling) or `cors.Middleware`.
+
 ## [1.4.0] - 2026-06-10
 
 ### Security (BREAKING)

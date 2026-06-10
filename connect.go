@@ -65,6 +65,13 @@ func TelemetryInterceptor(logger *slog.Logger, provider TelemetryProvider, opts 
 }
 
 // WithTelemetry configures telemetry for the App.
+//
+// The provider's interceptor is applied to registered handlers that
+// implement ConnectHandlerWithInterceptor. Telemetry is best-effort:
+// for handlers that cannot receive interceptors a warning is logged
+// (unlike WithInterceptors, which fails fast, since missing telemetry
+// is not a security risk). Handlers registered with WithPlainService,
+// WithMCP, or WithMCPAuth are skipped.
 func WithTelemetry(provider TelemetryProvider, opts TelemetryOptions) Option {
 	return func(a *App) {
 		a.telemetryProvider = provider
@@ -83,10 +90,11 @@ func WithNoopTelemetry() Option {
 // CORSInterceptors returns CORS interceptors for Connect RPC.
 // This creates interceptors that add CORS headers to Connect RPC responses.
 //
-// Prefer WithConnectRPC, which applies CORS at the HTTP level for all
-// registered handlers and also answers preflight requests. Use this
-// interceptor only when you need CORS on a single handler created with
-// connect.WithInterceptors.
+// Deprecated: use WithConnectRPC, which applies CORS at the HTTP level
+// for all registered handlers and also answers preflight requests, or
+// cors.Middleware directly for a single handler. This interceptor does
+// not handle preflight requests and will be removed in a future major
+// version.
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
 func CORSInterceptors(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
@@ -111,15 +119,25 @@ func AuthInterceptors(logger *slog.Logger, imasURL string) connect.Interceptor {
 }
 
 // ConnectOptions configures Connect RPC services.
+//
+// Deprecated: pass interceptors at handler creation with
+// connect.WithInterceptors instead (see AuthInterceptors,
+// PathInterceptors, navigaid.RequirePermission and
+// navigaid.RequireUnitPermission). Will be removed in a future major
+// version.
 type ConnectOptions struct {
 	RequiredPermissions []string
 	UnitPermissions     map[string][]string
 }
 
 // ConnectOption is a function that configures ConnectOptions.
+//
+// Deprecated: see ConnectOptions.
 type ConnectOption func(*ConnectOptions)
 
 // WithRequiredPermissions adds required permissions.
+//
+// Deprecated: see ConnectOptions.
 func WithRequiredPermissions(permissions ...string) ConnectOption {
 	return func(opts *ConnectOptions) {
 		opts.RequiredPermissions = append(opts.RequiredPermissions, permissions...)
@@ -127,6 +145,8 @@ func WithRequiredPermissions(permissions ...string) ConnectOption {
 }
 
 // WithUnitPermissions adds unit-specific permissions.
+//
+// Deprecated: see ConnectOptions.
 func WithUnitPermissions(unit string, permissions ...string) ConnectOption {
 	return func(opts *ConnectOptions) {
 		if opts.UnitPermissions == nil {
@@ -139,6 +159,12 @@ func WithUnitPermissions(unit string, permissions ...string) ConnectOption {
 
 // NewConnectHandler creates a handler for Connect RPC with authentication.
 // It automatically adds authentication and permission interceptors based on the options.
+//
+// Deprecated: this only works for handlers that implement
+// ConnectHandlerWithInterceptor, which connect-go generated handlers do
+// not. Pass interceptors at handler creation with
+// connect.WithInterceptors instead. Will be removed in a future major
+// version.
 func NewConnectHandler(
 	logger *slog.Logger,
 	jwks *navigaid.JWKS,
