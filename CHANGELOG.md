@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-10
+
 ### Added
 - `mcp.Tool.RequiredPermissions` — per-tool organization-level permission
   checks enforced by the MCP server before the handler runs. Tools with
@@ -26,10 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never used by the App). Best-effort: a warning is logged for handlers
   that cannot receive it.
 
-### Deprecated
+### Removed (BREAKING)
 - `NewConnectHandler`, `ConnectOptions`, `ConnectOption`,
   `WithRequiredPermissions`, `WithUnitPermissions` — pass interceptors at
-  handler creation with `connect.WithInterceptors` instead.
+  handler creation with `connect.WithInterceptors` instead (see
+  MIGRATION.md). The old helper silently skipped authentication for
+  connect-go generated handlers.
 - `CORSInterceptors` — use `WithConnectRPC` (HTTP-level CORS middleware
   with preflight handling) or `cors.Middleware`.
 

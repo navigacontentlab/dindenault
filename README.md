@@ -310,8 +310,8 @@ Dindenault's architecture is built around Connect interceptors. All cross-cuttin
 - **`AuthInterceptors(logger, imasURL)`**: Adds Naviga ID authentication
 - **`PathInterceptors(logger, configs)`**: Adds method-level permission checks
 
-(`CORSInterceptors` is deprecated — use `WithConnectRPC`, which applies CORS
-at the HTTP level including preflight handling.)
+CORS is not an interceptor — it is HTTP middleware applied by
+[`WithConnectRPC`](#cors-support).
 
 For AWS X-Ray tracing, use the [`xray` submodule](./xray/README.md):
 
@@ -534,38 +534,28 @@ app := dindenault.New(logger,
 )
 ```
 
-### Using NewConnectHandler (Deprecated)
+### Combining Authentication and Permissions
 
-> **Deprecated:** `NewConnectHandler` only works with handlers that
-> implement `ConnectHandlerWithInterceptor`, which connect-go generated
-> handlers do not. Pass `AuthInterceptors`, `navigaid.RequirePermission`,
-> and `navigaid.RequireUnitPermission` via `connect.WithInterceptors` at
-> handler creation instead.
+Combine authentication with permission checks by stacking interceptors
+at handler creation. Order matters — authentication must run first:
 
 ```go
-// Create the JWKS for token validation
-jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL))
-
-// Create your service implementation
-myService := service.NewMyService(logger)
-
-// Create the basic handler without authentication
-baseHandler := service.NewMyServiceHandler(myService)
-
-// Wrap the handler with authentication
-authHandler := dindenault.NewConnectHandler(
-    logger,
-    jwks,
-    baseHandler,
-    dindenault.WithRequiredPermissions("my:permission"),
-    dindenault.WithUnitPermissions("news", "article:publish"),
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithInterceptors(
+        dindenault.AuthInterceptors(logger, imasURL),
+        navigaid.RequirePermission(logger, "my:permission"),
+        navigaid.RequireUnitPermission(logger, "news", "article:publish"),
+    ),
 )
 
-// Add the authenticated handler to your app
 app := dindenault.New(logger,
-    dindenault.WithService("myservice/", authHandler),
+    dindenault.WithService(path, handler),
 )
 ```
+
+For method-level granularity, use [`PathInterceptors`](#method-level-permissions-with-pathinterceptors)
+instead of `RequirePermission`.
 
 ### Accessing Authentication in Services
 

@@ -73,39 +73,6 @@ func TestTelemetryInterceptor(t *testing.T) {
 	})
 }
 
-func TestCORSInterceptors(t *testing.T) {
-	t.Run("function exists and returns interceptor", func(t *testing.T) {
-		// Create the interceptor
-		origins := []string{"https://example.com"}
-		interceptor := dindenault.CORSInterceptors(origins, false)
-
-		// Assert it's not nil
-		if interceptor == nil {
-			t.Error("CORSInterceptors returned nil")
-		}
-	})
-
-	t.Run("function works with different configurations", func(t *testing.T) {
-		// Test with HTTP allowed
-		interceptor1 := dindenault.CORSInterceptors([]string{testDomain}, true)
-		if interceptor1 == nil {
-			t.Error("CORSInterceptors with allowHTTP=true returned nil")
-		}
-
-		// Test with multiple origins
-		interceptor2 := dindenault.CORSInterceptors([]string{testDomain, "test.com"}, false)
-		if interceptor2 == nil {
-			t.Error("CORSInterceptors with multiple origins returned nil")
-		}
-
-		// Test with empty origins
-		interceptor3 := dindenault.CORSInterceptors([]string{}, false)
-		if interceptor3 == nil {
-			t.Error("CORSInterceptors with empty origins returned nil")
-		}
-	})
-}
-
 func TestAuthInterceptors(t *testing.T) {
 	// Skip if testing in short mode
 	if testing.Short() {
@@ -391,10 +358,14 @@ func TestWithService(t *testing.T) {
 	})
 	t.Run("multiple global interceptors are all applied", func(t *testing.T) {
 		// Create a test app with multiple global interceptors
+		permissionConfigs := []dindenault.PathPermissionConfig{
+			{PathPrefix: "/test", Permissions: []string{"test:access"}},
+		}
+
 		app := dindenault.New(logger,
 			dindenault.WithInterceptors(
 				dindenault.LoggingInterceptors(logger),
-				dindenault.CORSInterceptors([]string{testWildcardDomain}, false),
+				dindenault.PathInterceptors(logger, permissionConfigs),
 			),
 		)
 

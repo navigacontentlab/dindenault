@@ -1,5 +1,64 @@
 # Migration Guide
 
+## 1.4.0 → 1.5.0
+
+### Removed APIs
+
+The deprecated handler/permission helpers were removed. All of them have
+direct replacements:
+
+| Removed | Replacement |
+|---|---|
+| `NewConnectHandler(logger, jwks, handler, opts...)` | Pass interceptors at handler creation (below) |
+| `ConnectOptions`, `ConnectOption` | — (only used by `NewConnectHandler`) |
+| `WithRequiredPermissions(perms...)` | `navigaid.RequirePermission(logger, perm)` as an interceptor |
+| `WithUnitPermissions(unit, perms...)` | `navigaid.RequireUnitPermission(logger, unit, perm)` as an interceptor |
+| `CORSInterceptors(origins, allowHTTP)` | `WithConnectRPC(cors.Options{...})` (or `cors.Middleware` for a single handler) |
+
+Before:
+
+```go
+authHandler := dindenault.NewConnectHandler(logger, jwks, baseHandler,
+    dindenault.WithRequiredPermissions("my:permission"),
+    dindenault.WithUnitPermissions("news", "article:publish"),
+)
+
+app := dindenault.New(logger,
+    dindenault.WithService("myservice/", authHandler),
+)
+```
+
+After:
+
+```go
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithInterceptors(
+        dindenault.AuthInterceptors(logger, imasURL),
+        navigaid.RequirePermission(logger, "my:permission"),
+        navigaid.RequireUnitPermission(logger, "news", "article:publish"),
+    ),
+)
+
+app := dindenault.New(logger,
+    dindenault.WithService(path, handler),
+)
+```
+
+Note that the replacement is more than a syntactic change: the old
+`NewConnectHandler` silently skipped authentication for connect-go
+generated handlers (they don't implement
+`ConnectHandlerWithInterceptor`), while interceptors passed at handler
+creation always run.
+
+### New in 1.5.0 (no action required)
+
+- `mcp.Tool.RequiredPermissions` — declarative per-tool authorization
+  for MCP tools.
+- `mcp.AuthorizationFromContext` now works with any of dindenault's
+  authentication entry points.
+- `WithTelemetry` actually applies the provider's interceptor.
+
 ## 1.3.x → 1.4.0
 
 Version 1.4.0 contains security hardening with behavior changes. Most
