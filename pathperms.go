@@ -13,11 +13,38 @@ import (
 )
 
 // PathPermissionConfig defines permission requirements for specific paths.
+//
+// When several configurations match a request path, the longest
+// (most specific) PathPrefix wins. Paths that match no configuration
+// pass through without additional permission checks — define a
+// catch-all config (e.g. PathPrefix "/") if you want every path to
+// require permissions.
 type PathPermissionConfig struct {
 	// PathPrefix is the prefix of the request path
 	PathPrefix string
 	// Permissions are the organization-level permissions required
 	Permissions []string
+}
+
+// matchPathConfig returns the configuration with the longest matching
+// PathPrefix, or nil if none matches. Matching is case-insensitive to
+// stay consistent with the App's request routing.
+func matchPathConfig(configs []PathPermissionConfig, path string) *PathPermissionConfig {
+	path = strings.ToLower(path)
+
+	var matched *PathPermissionConfig
+
+	for i := range configs {
+		prefix := strings.ToLower(configs[i].PathPrefix)
+
+		if strings.HasPrefix(path, prefix) {
+			if matched == nil || len(configs[i].PathPrefix) > len(matched.PathPrefix) {
+				matched = &configs[i]
+			}
+		}
+	}
+
+	return matched
 }
 
 // PathPermissionHandler wraps a Connect handler with path-specific permission checking.
@@ -31,16 +58,8 @@ type PathPermissionHandler struct {
 func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
-	// Find matching path configuration
-	var matchedConfig *PathPermissionConfig
-
-	for _, config := range h.configurations {
-		if strings.HasPrefix(path, config.PathPrefix) {
-			matchedConfig = &config
-
-			break
-		}
-	}
+	// Find the most specific matching path configuration
+	matchedConfig := matchPathConfig(h.configurations, path)
 
 	// If no matching configuration, just pass through to the handler
 	if matchedConfig == nil {
@@ -78,25 +97,32 @@ func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	h.handler.ServeHTTP(w, r)
 }
 
-// WithPathPermissionService adds a service with path-specific permission requirements.
-// This allows defining different permission requirements for different API paths.
-// Authentication must be handled separately using WithInterceptors and AuthInterceptors.
+// WithPathPermissionService adds a plain HTTP service with built-in
+// authentication and path-specific permission requirements.
+//
+// Every request is first authenticated against the given JWKS (HTTP 401
+// on failure), and then checked against the path permission
+// configurations (HTTP 403 on missing permissions). The most specific
+// (longest) matching PathPrefix wins; paths without a matching
+// configuration require authentication but no specific permission.
+//
+// The service is registered as a plain handler — app-level Connect
+// interceptors (WithInterceptors) are not applied to it.
 //
 // Parameters:
 // - path: The base URL path prefix for the service
+// - jwks: JWKS used to validate bearer tokens (see navigaid.NewJWKS)
 // - handler: The HTTP handler for the service
 // - configs: Path-specific permission configurations
 //
 // Example:
 //
+//	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint("https://imas.example.com"))
+//
 //	app := dindenault.New(logger,
-//	    // Add authentication interceptor
-//	    dindenault.WithInterceptors(
-//	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
-//	    ),
-//	    // Register service with path-specific permissions
 //	    dindenault.WithPathPermissionService(
 //	        "/api/",
+//	        jwks,
 //	        apiHandler,
 //	        []dindenault.PathPermissionConfig{
 //	            {
@@ -106,15 +132,13 @@ func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 //	            {
 //	                PathPrefix: "/api/admin",
 //	                Permissions: []string{"admin:access"},
-//	                UnitPermissions: map[string][]string{
-//	                    "HQ": {"admin:superuser"},
-//	                },
 //	            },
 //	        },
 //	    ),
 //	)
 func WithPathPermissionService(
 	path string,
+	jwks *navigaid.JWKS,
 	handler http.Handler,
 	configs []PathPermissionConfig,
 ) Option {
@@ -126,8 +150,12 @@ func WithPathPermissionService(
 			configurations: configs,
 		}
 
-		// Register the service
-		WithService(path, permHandler)(a)
+		// Authenticate before permission checks.
+		authHandler := navigaid.HTTPMiddleware(a.logger, jwks, permHandler)
+
+		// Register the service as a plain handler — Connect interceptors
+		// cannot be applied to plain HTTP handlers.
+		WithPlainService(path, authHandler)(a)
 
 		a.logger.Info("Registered service with path-specific permissions",
 			"path", path,
@@ -178,16 +206,8 @@ func PathInterceptors(logger *slog.Logger, configs []PathPermissionConfig) conne
 			// Get the request path
 			path := req.Spec().Procedure
 
-			// Find matching path configuration
-			var matchedConfig *PathPermissionConfig
-
-			for _, config := range configs {
-				if strings.HasPrefix(path, config.PathPrefix) {
-					matchedConfig = &config
-
-					break
-				}
-			}
+			// Find the most specific matching path configuration
+			matchedConfig := matchPathConfig(configs, path)
 
 			// If no matching configuration, just pass through to the handler
 			if matchedConfig == nil {

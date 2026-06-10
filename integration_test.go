@@ -13,6 +13,7 @@ import (
 const (
 	testAdminPath       = "/api/admin"
 	testAdminPermission = "admin:access"
+	testDotTestDomain   = ".test.com"
 )
 
 // TestCompleteServiceRegistrationFlow tests the complete service registration flow
@@ -73,15 +74,18 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 			dindenault.WithService("/api/cors", handler),
 		)
 
-		// Verify registrations (CORS OPTIONS handler + service)
+		// CORS is middleware, not an extra registration or interceptor
 		registrations := app.Registrations()
-		if len(registrations) != 2 {
-			t.Fatalf("Expected 2 registrations (CORS + service), got %d", len(registrations))
+		if len(registrations) != 1 {
+			t.Fatalf("Expected 1 registration (service), got %d", len(registrations))
 		}
 
-		// Verify CORS interceptor was added
-		if len(app.GlobalInterceptors()) != 1 {
-			t.Errorf("Expected 1 global interceptor (CORS), got %d", len(app.GlobalInterceptors()))
+		if app.CORSOptions() == nil {
+			t.Error("Expected CORS options to be set")
+		}
+
+		if len(app.GlobalInterceptors()) != 0 {
+			t.Errorf("Expected 0 global interceptors, got %d", len(app.GlobalInterceptors()))
 		}
 	})
 
@@ -94,39 +98,43 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 		// Create app with custom CORS
 		app := dindenault.New(logger,
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{testWildcardDomain, ".test.com"},
+				AllowedDomains: []string{testWildcardDomain, testDotTestDomain},
 				AllowHTTP:      true,
 			}),
 			dindenault.WithService("/api/custom", handler),
 		)
 
-		// Verify registrations
+		// Prepare handlers (wraps them with CORS middleware)
+		_ = app.Handle()
+
 		registrations := app.Registrations()
-		if len(registrations) != 2 {
-			t.Fatalf("Expected 2 registrations, got %d", len(registrations))
+		if len(registrations) != 1 {
+			t.Fatalf("Expected 1 registration, got %d", len(registrations))
 		}
 
-		// Test OPTIONS handler with allowed origin
-		optionsHandler := registrations[0].Handler
+		// Test preflight with allowed origin
+		corsHandler := registrations[0].Handler
 		req := httptest.NewRequest("OPTIONS", "/api/custom", nil)
 		req.Header.Set("Origin", "https://app.example.com")
+		req.Header.Set("Access-Control-Request-Method", "POST")
 
 		recorder := httptest.NewRecorder()
-		optionsHandler.ServeHTTP(recorder, req)
+		corsHandler.ServeHTTP(recorder, req)
 
-		if recorder.Code != http.StatusOK {
-			t.Errorf("Expected status 200 for allowed origin, got %d", recorder.Code)
+		if recorder.Code != http.StatusNoContent {
+			t.Errorf("Expected status 204 for allowed preflight, got %d", recorder.Code)
 		}
 
-		// Test OPTIONS handler with HTTP origin (should be allowed)
+		// Test preflight with HTTP origin (should be allowed)
 		req2 := httptest.NewRequest("OPTIONS", "/api/custom", nil)
 		req2.Header.Set("Origin", "http://app.example.com")
+		req2.Header.Set("Access-Control-Request-Method", "POST")
 
 		recorder2 := httptest.NewRecorder()
-		optionsHandler.ServeHTTP(recorder2, req2)
+		corsHandler.ServeHTTP(recorder2, req2)
 
-		if recorder2.Code != http.StatusOK {
-			t.Errorf("Expected status 200 for HTTP origin when AllowHTTP=true, got %d", recorder2.Code)
+		if recorder2.Code != http.StatusNoContent {
+			t.Errorf("Expected status 204 for HTTP origin when AllowHTTP=true, got %d", recorder2.Code)
 		}
 	})
 
@@ -199,7 +207,9 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 
 		privateHandler := &mockConnectHandler{interceptorsApplied: false}
 
-		// Create app with complex configuration
+		// Create app with complex configuration. The public handler is a
+		// plain HTTP handler, so it is registered with WithPlainService
+		// to opt out of the Connect interceptors.
 		app := dindenault.New(logger,
 			dindenault.WithInterceptors(
 				dindenault.LoggingInterceptors(logger),
@@ -208,25 +218,25 @@ func TestCompleteServiceRegistrationFlow(t *testing.T) {
 				AllowedDomains: []string{".company.com"},
 				AllowHTTP:      false,
 			}),
-			dindenault.WithService("/api/public", publicHandler),
+			dindenault.WithPlainService("/api/public", publicHandler),
 			dindenault.WithService("/api/private", privateHandler),
 		)
 
 		// Verify all components
 		registrations := app.Registrations()
-		if len(registrations) != 3 { // OPTIONS + 2 services
-			t.Fatalf("Expected 3 registrations, got %d", len(registrations))
+		if len(registrations) != 2 {
+			t.Fatalf("Expected 2 registrations, got %d", len(registrations))
 		}
 
 		interceptors := app.GlobalInterceptors()
-		if len(interceptors) != 2 { // Logging + CORS
-			t.Errorf("Expected 2 global interceptors, got %d", len(interceptors))
+		if len(interceptors) != 1 { // Logging
+			t.Errorf("Expected 1 global interceptor, got %d", len(interceptors))
 		}
 
 		// Test that services work
 		req := httptest.NewRequest("GET", "/api/public", nil)
 		recorder := httptest.NewRecorder()
-		registrations[1].Handler.ServeHTTP(recorder, req) // Skip OPTIONS handler
+		registrations[0].Handler.ServeHTTP(recorder, req)
 
 		if recorder.Code != http.StatusOK {
 			t.Errorf("Expected status 200, got %d", recorder.Code)
@@ -368,26 +378,25 @@ func TestBackwardCompatibilityScenarios(t *testing.T) {
 			dindenault.WithService("/api/test", handler),
 		)
 
-		// Verify CORS was configured
+		// Prepare handlers (wraps them with CORS middleware)
+		_ = app.Handle()
+
 		registrations := app.Registrations()
-		if len(registrations) != 2 { // OPTIONS + service
-			t.Fatalf("Expected 2 registrations, got %d", len(registrations))
+		if len(registrations) != 1 {
+			t.Fatalf("Expected 1 registration, got %d", len(registrations))
 		}
 
-		if len(app.GlobalInterceptors()) != 1 {
-			t.Errorf("Expected 1 global interceptor (CORS), got %d", len(app.GlobalInterceptors()))
-		}
-
-		// Test OPTIONS handler works
-		optionsHandler := registrations[0].Handler
+		// Test preflight via the CORS-wrapped handler
+		corsHandler := registrations[0].Handler
 		req := httptest.NewRequest("OPTIONS", "/api/test", nil)
 		req.Header.Set("Origin", "https://app.example.com")
+		req.Header.Set("Access-Control-Request-Method", "POST")
 
 		recorder := httptest.NewRecorder()
-		optionsHandler.ServeHTTP(recorder, req)
+		corsHandler.ServeHTTP(recorder, req)
 
-		if recorder.Code != http.StatusOK {
-			t.Errorf("Expected status 200, got %d", recorder.Code)
+		if recorder.Code != http.StatusNoContent {
+			t.Errorf("Expected status 204, got %d", recorder.Code)
 		}
 
 		// Verify CORS headers
@@ -443,12 +452,16 @@ func TestBackwardCompatibilityScenarios(t *testing.T) {
 		)
 
 		// Verify all components
-		if len(app.Registrations()) != 2 { // OPTIONS + service
-			t.Errorf("Expected 2 registrations, got %d", len(app.Registrations()))
+		if len(app.Registrations()) != 1 {
+			t.Errorf("Expected 1 registration, got %d", len(app.Registrations()))
 		}
 
-		if len(app.GlobalInterceptors()) != 3 { // Logging + PathInterceptors + CORS
-			t.Errorf("Expected 3 global interceptors, got %d", len(app.GlobalInterceptors()))
+		if len(app.GlobalInterceptors()) != 2 { // Logging + PathInterceptors
+			t.Errorf("Expected 2 global interceptors, got %d", len(app.GlobalInterceptors()))
+		}
+
+		if app.CORSOptions() == nil {
+			t.Error("Expected CORS options to be set")
 		}
 	})
 }
@@ -488,27 +501,26 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 			dindenault.WithService("/api/test", handler),
 		)
 
-		// Verify CORS was configured with defaults
-		if len(app.GlobalInterceptors()) != 1 {
-			t.Errorf("Expected 1 global interceptor (CORS with defaults), got %d", len(app.GlobalInterceptors()))
-		}
+		// Prepare handlers (wraps them with CORS middleware)
+		_ = app.Handle()
 
 		registrations := app.Registrations()
-		if len(registrations) != 2 { // OPTIONS + service
-			t.Fatalf("Expected 2 registrations, got %d", len(registrations))
+		if len(registrations) != 1 {
+			t.Fatalf("Expected 1 registration, got %d", len(registrations))
 		}
 
-		// Test that OPTIONS handler works with default domains
-		optionsHandler := registrations[0].Handler
+		// Test that preflight works with default domains
+		corsHandler := registrations[0].Handler
 		req := httptest.NewRequest("OPTIONS", "/api/test", nil)
 		req.Header.Set("Origin", "https://app.infomaker.io")
+		req.Header.Set("Access-Control-Request-Method", "POST")
 
 		recorder := httptest.NewRecorder()
-		optionsHandler.ServeHTTP(recorder, req)
+		corsHandler.ServeHTTP(recorder, req)
 
 		// Should work with default domains (which include .infomaker.io)
-		if recorder.Code != http.StatusOK {
-			t.Errorf("Expected status 200 with default domains, got %d", recorder.Code)
+		if recorder.Code != http.StatusNoContent {
+			t.Errorf("Expected status 204 with default domains, got %d", recorder.Code)
 		}
 	})
 
@@ -574,20 +586,34 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 			dindenault.WithService("/api/test", handler),
 		)
 
-		// Get OPTIONS handler
-		registrations := app.Registrations()
-		optionsHandler := registrations[0].Handler
+		// Prepare handlers (wraps them with CORS middleware)
+		_ = app.Handle()
 
-		// Test with invalid origin
+		corsHandler := app.Registrations()[0].Handler
+
+		// Preflight with invalid origin
 		req := httptest.NewRequest("OPTIONS", "/api/test", nil)
 		req.Header.Set("Origin", "https://malicious.com")
+		req.Header.Set("Access-Control-Request-Method", "POST")
 
 		recorder := httptest.NewRecorder()
-		optionsHandler.ServeHTTP(recorder, req)
+		corsHandler.ServeHTTP(recorder, req)
 
 		// Should return 403 Forbidden
 		if recorder.Code != http.StatusForbidden {
 			t.Errorf("Expected status 403 for invalid origin, got %d", recorder.Code)
+		}
+
+		// Non-preflight request with invalid origin passes through
+		// without CORS headers (the browser blocks the response).
+		req2 := httptest.NewRequest("POST", "/api/test", nil)
+		req2.Header.Set("Origin", "https://malicious.com")
+
+		recorder2 := httptest.NewRecorder()
+		corsHandler.ServeHTTP(recorder2, req2)
+
+		if recorder2.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Error("Invalid origin must not receive CORS headers")
 		}
 	})
 
@@ -604,24 +630,29 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 			dindenault.WithService("/api/test", handler),
 		)
 
-		// Get OPTIONS handler
-		registrations := app.Registrations()
-		optionsHandler := registrations[0].Handler
+		// Prepare handlers (wraps them with CORS middleware)
+		_ = app.Handle()
 
-		// Test without Origin header
+		corsHandler := app.Registrations()[0].Handler
+
+		// A request without Origin is not a CORS request — it passes
+		// through to the handler without CORS headers.
 		req := httptest.NewRequest("OPTIONS", "/api/test", nil)
-		// No Origin header set
 		recorder := httptest.NewRecorder()
-		optionsHandler.ServeHTTP(recorder, req)
+		corsHandler.ServeHTTP(recorder, req)
 
-		// Should return 400 Bad Request
-		if recorder.Code != http.StatusBadRequest {
-			t.Errorf("Expected status 400 for missing origin, got %d", recorder.Code)
+		if recorder.Code != http.StatusOK {
+			t.Errorf("Expected status 200 from handler, got %d", recorder.Code)
+		}
+
+		if recorder.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Error("Requests without Origin must not receive CORS headers")
 		}
 	})
 
 	t.Run("multiple CORS configurations", func(t *testing.T) {
-		// Test applying WithConnectRPC multiple times
+		// Applying WithConnectRPC multiple times — the last configuration
+		// wins.
 		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
@@ -632,21 +663,24 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 				AllowHTTP:      false,
 			}),
 			dindenault.WithConnectRPC(cors.Options{
-				AllowedDomains: []string{".test.com"},
+				AllowedDomains: []string{testDotTestDomain},
 				AllowHTTP:      true,
 			}),
 			dindenault.WithService("/api/test", handler),
 		)
 
-		// Both CORS configurations should be added
-		if len(app.GlobalInterceptors()) != 2 {
-			t.Errorf("Expected 2 global interceptors (2 CORS), got %d", len(app.GlobalInterceptors()))
+		opts := app.CORSOptions()
+		if opts == nil {
+			t.Fatal("Expected CORS options to be set")
 		}
 
-		// Both OPTIONS handlers should be added
+		if len(opts.AllowedDomains) != 1 || opts.AllowedDomains[0] != testDotTestDomain {
+			t.Errorf("Expected last CORS configuration to win, got %v", opts.AllowedDomains)
+		}
+
 		registrations := app.Registrations()
-		if len(registrations) != 3 { // 2 OPTIONS + 1 service
-			t.Fatalf("Expected 3 registrations, got %d", len(registrations))
+		if len(registrations) != 1 {
+			t.Fatalf("Expected 1 registration, got %d", len(registrations))
 		}
 	})
 
@@ -707,7 +741,9 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 	})
 
 	t.Run("handler that doesn't implement ConnectHandlerWithInterceptor", func(t *testing.T) {
-		// Test with a regular HTTP handler that doesn't support interceptors
+		// A regular HTTP handler registered with WithService on an app
+		// that has global interceptors must cause a startup panic —
+		// silently skipping (auth) interceptors would be fail-open.
 		regularHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
@@ -719,19 +755,37 @@ func TestErrorHandlingAndEdgeCases(t *testing.T) {
 			dindenault.WithService("/api/regular", regularHandler),
 		)
 
-		// Verify service was registered
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic when global interceptors cannot be applied")
+			}
+		}()
+
+		_ = app.Handle()
+	})
+
+	t.Run("WithPlainService opts out of global interceptors", func(t *testing.T) {
+		// The same handler registered with WithPlainService must work
+		// without panicking.
+		regularHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+
+		app := dindenault.New(logger,
+			dindenault.WithInterceptors(
+				dindenault.LoggingInterceptors(logger),
+			),
+			dindenault.WithPlainService("/api/plain", regularHandler),
+		)
+
+		_ = app.Handle()
+
 		registrations := app.Registrations()
 		if len(registrations) != 1 {
 			t.Fatalf("Expected 1 registration, got %d", len(registrations))
 		}
 
-		// Global interceptors should still be set
-		if len(app.GlobalInterceptors()) != 1 {
-			t.Errorf("Expected 1 global interceptor, got %d", len(app.GlobalInterceptors()))
-		}
-
-		// The handler should still work (interceptors just won't be applied)
-		req := httptest.NewRequest("GET", "/api/regular", nil)
+		req := httptest.NewRequest("GET", "/api/plain", nil)
 		recorder := httptest.NewRecorder()
 		registrations[0].Handler.ServeHTTP(recorder, req)
 

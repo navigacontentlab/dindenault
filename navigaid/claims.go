@@ -1,9 +1,7 @@
 package navigaid
 
 import (
-	"fmt"
-
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // Known token types.
@@ -91,14 +89,4 @@ func (p PermissionsClaim) PermissionsInUnit(unit string) map[string]bool {
 	}
 
 	return m
-}
-
-// Valid validates the claims according to JWT standards.
-func (c Claims) Valid() error {
-	err := c.RegisteredClaims.Valid()
-	if err != nil {
-		return fmt.Errorf("%w", err)
-	}
-
-	return nil
 }

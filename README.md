@@ -97,20 +97,32 @@ import (
     "connectrpc.com/connect"
 )
 
-app := dindenault.New(logger,
-    // Register a service - this is the only service registration method
-    dindenault.WithService("api/", myServiceHandler),
-    
-    // Add global interceptors for cross-cutting concerns
-    dindenault.WithInterceptors(
+// Apply interceptors at handler creation — this works with any
+// connect-go generated handler:
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithInterceptors(
         dindenault.LoggingInterceptors(logger),
         dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
 )
 
+app := dindenault.New(logger,
+    // Register a service - this is the only service registration method
+    dindenault.WithService(path, handler),
+)
+
 // Start the Lambda handler
 lambda.Start(app.Handle())
 ```
+
+> **Note:** App-level interceptors (`dindenault.WithInterceptors`) can only be
+> applied to handlers that implement `ConnectHandlerWithInterceptor`. Standard
+> connect-go generated handlers do **not** implement it — pass interceptors at
+> handler creation as shown above. If app-level interceptors cannot be applied
+> to a registered handler, the app panics at startup instead of silently
+> running without them. Use `WithPlainService` for handlers (health checks,
+> webhooks) that intentionally should not receive interceptors.
 
 ### Service Registration with Optional CORS
 
@@ -254,17 +266,22 @@ provider := xrayprovider.New()
 
 ### Using Interceptors
 
-The `WithInterceptors` function allows adding multiple interceptors in a single call:
+Pass interceptors at handler creation with `connect.WithInterceptors`:
 
 ```go
-app := dindenault.New(logger,
-    dindenault.WithInterceptors(
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithInterceptors(
         dindenault.LoggingInterceptors(logger),
         dindenault.TelemetryInterceptor(logger, provider, telemetryOpts),
         dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
 )
 ```
+
+The app-level `dindenault.WithInterceptors` option only works with handlers
+that implement `ConnectHandlerWithInterceptor`; the app refuses to start
+(panics) if it cannot apply the configured interceptors to a handler.
 
 ### Global vs. Handler-Specific Interceptors
 
@@ -435,14 +452,28 @@ Dindenault provides built-in support for Naviga ID authentication with several i
 
 ### Basic Authentication
 
-The simplest approach is using `AuthInterceptors`:
+The simplest approach is using `AuthInterceptors` at handler creation:
 
 ```go
-app := dindenault.New(logger,
-    dindenault.WithInterceptors(
+path, handler := servicev1connect.NewServiceHandler(
+    impl,
+    connect.WithInterceptors(
         dindenault.AuthInterceptors(logger, "https://imas.example.com"),
     ),
-    dindenault.WithService("service/", serviceHandler),
+)
+
+app := dindenault.New(logger,
+    dindenault.WithService(path, handler),
+)
+```
+
+For plain (non-Connect) HTTP handlers, use `navigaid.HTTPMiddleware`:
+
+```go
+jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint("https://imas.example.com"))
+
+app := dindenault.New(logger,
+    dindenault.WithPlainService("/webhook", navigaid.HTTPMiddleware(logger, jwks, webhookHandler)),
 )
 ```
 
@@ -957,15 +988,16 @@ lambda.Start(app.HandleAPIGateway())
 
 ### Token Refresh for Long Operations
 
-For long-running operations, you can refresh tokens automatically:
+For long-running operations, `TokenRefresher` caches access tokens and
+fetches new ones when they are about to expire:
 
 ```go
 refresher := navigaid.NewTokenRefresher(logger, navigaid.AccessTokenEndpoint(imasURL))
 
-err := navigaid.WithTokenRefresh(ctx, refresher, func(refreshedCtx context.Context) error {
-    // Use refreshedCtx which will have a valid token throughout the operation
-    return longRunningOperation(refreshedCtx)
-})
+accessToken, err := refresher.GetAccessToken(ctx, navigaIDToken)
+if err != nil {
+    return err
+}
 ```
 
 ## Releasing

@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security (BREAKING)
+- App-level interceptors (`WithInterceptors`) now fail fast: the app panics at
+  startup if a registered handler cannot receive the configured interceptors,
+  instead of silently running the handler without them (previously this could
+  leave services completely unauthenticated). Use `connect.WithInterceptors`
+  at handler creation, or the new `WithPlainService` for handlers that should
+  not receive interceptors.
+- CORS validation now parses the Origin header and matches the hostname on
+  label boundaries — `example.com` no longer matches `evilexample.com`.
+- CORS no longer sets `Access-Control-Allow-Credentials` when the wildcard
+  `"*"` is configured.
+- `HasPermission`/`AuthorizeWithDetails` now only accept organization-level
+  permissions; a permission granted in a single unit no longer grants
+  organization-wide access. Use the new `HasPermissionInUnit` for unit-scoped
+  checks.
+- JWT validation requires an expiration claim (`exp`) and supports optional
+  issuer/audience validation via `navigaid.WithExpectedIssuer` and
+  `navigaid.WithExpectedAudience`.
+- Fixed panic (DoS) when validating a JWT without a `kid` header.
+- Internal error details are no longer returned in HTTP 500 response bodies.
+- `Authorization`, `x-imid-token`, and `Cookie` headers are redacted in debug
+  logging.
+- `AccessTokenService.NewAccessToken` now verifies the HTTP status code and
+  rejects empty tokens.
+
+### Changed (BREAKING)
+- Migrated from `github.com/golang-jwt/jwt/v4` to `v5`. `navigaid.Claims` no
+  longer has a `Valid()` method.
+- `WithConnectRPC` applies CORS as HTTP middleware around all registered
+  handlers (including preflight) instead of registering a catch-all OPTIONS
+  handler and a Connect interceptor.
+- `WithPathPermissionService` now takes a `*navigaid.JWKS` and authenticates
+  requests itself (the previous design could never authenticate, since
+  Connect interceptors cannot run on plain HTTP handlers).
+- Path permission matching uses the longest (most specific) matching prefix
+  instead of first match, and is case-insensitive to match request routing.
+- `AuthResult.Permissions` now contains organization-level permissions only;
+  unit permissions are exposed in the new `AuthResult.UnitPermissions` map.
+- Removed dead code: `navigaid.WithTokenRefresh`, `navigaid.AddAnnotation`,
+  `navigaid.AddUserAnnotation`.
+
+### Added
+- `WithPlainService` for registering plain HTTP handlers that opt out of
+  app-level interceptors.
+- `navigaid.HTTPMiddleware` — JWT authentication middleware for plain HTTP
+  handlers.
+- `dindenault.HasPermissionInUnit` for unit-scoped permission checks.
+- `cors.Middleware` — HTTP-level CORS middleware with preflight handling.
+
+### Fixed
+- JWKS and access-token HTTP clients now have a 10 s timeout (previously no
+  timeout — a hung IMAS endpoint could stall requests until the Lambda
+  timed out).
+- JWKS refresh failures fall back to previously fetched keys with a 30 s
+  retry backoff instead of failing all authentication.
+- `TokenRefresher` evicts expired tokens so its cache cannot grow without
+  bound.
+- `Handle`/`HandleAPIGateway` can both be called on the same App without
+  applying interceptors twice; handler sorting now happens once at startup
+  instead of on every request.
+- `WithMCPAuth` panics on empty `imasURL` instead of silently configuring a
+  broken JWKS endpoint.
+
 ## [1.0.0] - 2026-01-14
 
 ### Added

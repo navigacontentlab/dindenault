@@ -146,259 +146,54 @@ func TestWithConnectRPCCORS_Deprecated(t *testing.T) {
 	t.Skip("WithConnectRPCCORS has been removed - use WithConnectRPC instead")
 }
 
-// TestWithConnectRPC tests the renamed CORS configuration function.
-// This tests Requirements 2.2 and 2.4 - verifying CORS headers, OPTIONS handling, and default options.
-//
-//nolint:gocognit,funlen // Comprehensive test with multiple scenarios
+// TestWithConnectRPC tests the CORS configuration function. CORS is
+// applied as an HTTP middleware around registered handlers; the
+// middleware behavior itself is tested in the cors package.
 func TestWithConnectRPC(t *testing.T) {
 	logger := slog.Default()
 
-	t.Run("adds CORS interceptor to global interceptors", func(t *testing.T) {
-		// Create a test app
+	t.Run("stores CORS options on the app", func(t *testing.T) {
 		app := dindenault.New(logger)
 
-		// Apply WithConnectRPC with custom domains
 		dindenault.WithConnectRPC(cors.Options{
 			AllowedDomains: []string{testDomain},
 			AllowHTTP:      false,
 		})(app)
 
-		// Check that a global interceptor was added
-		interceptors := app.GlobalInterceptors()
-		if len(interceptors) != 1 {
-			t.Errorf("Expected 1 global interceptor, got %d", len(interceptors))
-		}
-	})
-
-	t.Run("adds OPTIONS handler registration", func(t *testing.T) {
-		// Create a test app
-		app := dindenault.New(logger)
-
-		// Apply WithConnectRPC
-		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{testDomain},
-			AllowHTTP:      false,
-		})(app)
-
-		// Check that a registration was added (for the OPTIONS handler)
-		registrations := app.Registrations()
-		if len(registrations) != 1 {
-			t.Errorf("Expected 1 registration (OPTIONS handler), got %d", len(registrations))
+		opts := app.CORSOptions()
+		if opts == nil {
+			t.Fatal("Expected CORS options to be set")
 		}
 
-		// Verify the registration is for the root path (catch-all)
-		if registrations[0].Path != "/" {
-			t.Errorf("Expected OPTIONS handler at '/', got '%s'", registrations[0].Path)
+		if len(opts.AllowedDomains) != 1 || opts.AllowedDomains[0] != testDomain {
+			t.Errorf("Expected allowed domains [%s], got %v", testDomain, opts.AllowedDomains)
+		}
+
+		// CORS no longer registers handlers or global interceptors.
+		if len(app.Registrations()) != 0 {
+			t.Errorf("Expected 0 registrations, got %d", len(app.Registrations()))
+		}
+
+		if len(app.GlobalInterceptors()) != 0 {
+			t.Errorf("Expected 0 global interceptors, got %d", len(app.GlobalInterceptors()))
 		}
 	})
 
 	t.Run("uses default domains when empty options provided", func(t *testing.T) {
-		// Create a test app
 		app := dindenault.New(logger)
 
-		// Apply WithConnectRPC with empty domains - should use defaults
 		dindenault.WithConnectRPC(cors.Options{
 			AllowedDomains: []string{},
 			AllowHTTP:      false,
 		})(app)
 
-		// Should still add interceptor and handler with default domains
-		if len(app.GlobalInterceptors()) != 1 {
-			t.Error("Expected CORS interceptor to be added with default domains")
+		opts := app.CORSOptions()
+		if opts == nil {
+			t.Fatal("Expected CORS options to be set")
 		}
 
-		if len(app.Registrations()) != 1 {
-			t.Error("Expected OPTIONS handler to be added with default domains")
-		}
-	})
-
-	t.Run("OPTIONS handler returns correct CORS headers", func(t *testing.T) {
-		// Create a test app
-		app := dindenault.New(logger)
-
-		// Apply WithConnectRPC
-		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{testWildcardDomain},
-			AllowHTTP:      false,
-		})(app)
-
-		// Get the OPTIONS handler
-		registrations := app.Registrations()
-		if len(registrations) != 1 {
-			t.Fatal("Expected 1 registration")
-		}
-
-		handler := registrations[0].Handler
-
-		// Test valid OPTIONS request
-		req := newTestRequest(t, "OPTIONS", "/test/path")
-		req.Header.Set("Origin", "https://app.example.com")
-
-		recorder := newTestResponseRecorder()
-		handler.ServeHTTP(recorder, req)
-
-		// Verify status code
-		if recorder.Code != 200 {
-			t.Errorf("Expected status 200, got %d", recorder.Code)
-		}
-
-		// Verify CORS headers are set correctly
-		headers := recorder.Header()
-
-		if origin := headers.Get("Access-Control-Allow-Origin"); origin != "https://app.example.com" {
-			t.Errorf("Expected Access-Control-Allow-Origin to be 'https://app.example.com', got '%s'", origin)
-		}
-
-		if methods := headers.Get("Access-Control-Allow-Methods"); methods != "POST, OPTIONS" {
-			t.Errorf("Expected Access-Control-Allow-Methods to be 'POST, OPTIONS', got '%s'", methods)
-		}
-
-		if allowHeaders := headers.Get("Access-Control-Allow-Headers"); allowHeaders == "" {
-			t.Error("Expected Access-Control-Allow-Headers to be set")
-		}
-
-		if credentials := headers.Get("Access-Control-Allow-Credentials"); credentials != "true" {
-			t.Errorf("Expected Access-Control-Allow-Credentials to be 'true', got '%s'", credentials)
-		}
-
-		if maxAge := headers.Get("Access-Control-Max-Age"); maxAge != "86400" {
-			t.Errorf("Expected Access-Control-Max-Age to be '86400', got '%s'", maxAge)
-		}
-	})
-
-	t.Run("OPTIONS handler rejects non-OPTIONS requests", func(t *testing.T) {
-		// Create a test app
-		app := dindenault.New(logger)
-
-		// Apply WithConnectRPC
-		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{testWildcardDomain},
-			AllowHTTP:      false,
-		})(app)
-
-		// Get the OPTIONS handler
-		registrations := app.Registrations()
-		handler := registrations[0].Handler
-
-		// Test POST request (should return 404)
-		req := newTestRequest(t, "POST", "/test/path")
-		req.Header.Set("Origin", "https://app.example.com")
-
-		recorder := newTestResponseRecorder()
-		handler.ServeHTTP(recorder, req)
-
-		// Should return 404 for non-OPTIONS requests
-		if recorder.Code != 404 {
-			t.Errorf("Expected status 404 for non-OPTIONS request, got %d", recorder.Code)
-		}
-	})
-
-	t.Run("OPTIONS handler rejects requests without Origin header", func(t *testing.T) {
-		// Create a test app
-		app := dindenault.New(logger)
-
-		// Apply WithConnectRPC
-		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{testWildcardDomain},
-			AllowHTTP:      false,
-		})(app)
-
-		// Get the OPTIONS handler
-		registrations := app.Registrations()
-		handler := registrations[0].Handler
-
-		// Test OPTIONS request without Origin header
-		req := newTestRequest(t, "OPTIONS", "/test/path")
-		// No Origin header set
-
-		recorder := newTestResponseRecorder()
-		handler.ServeHTTP(recorder, req)
-
-		// Should return 400 Bad Request
-		if recorder.Code != 400 {
-			t.Errorf("Expected status 400 for OPTIONS without Origin, got %d", recorder.Code)
-		}
-	})
-
-	t.Run("OPTIONS handler rejects forbidden origins", func(t *testing.T) {
-		// Create a test app
-		app := dindenault.New(logger)
-
-		// Apply WithConnectRPC with specific allowed domain
-		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{testWildcardDomain},
-			AllowHTTP:      false,
-		})(app)
-
-		// Get the OPTIONS handler
-		registrations := app.Registrations()
-		handler := registrations[0].Handler
-
-		// Test OPTIONS request with forbidden origin
-		req := newTestRequest(t, "OPTIONS", "/test/path")
-		req.Header.Set("Origin", "https://malicious.com")
-
-		recorder := newTestResponseRecorder()
-		handler.ServeHTTP(recorder, req)
-
-		// Should return 403 Forbidden
-		if recorder.Code != 403 {
-			t.Errorf("Expected status 403 for forbidden origin, got %d", recorder.Code)
-		}
-	})
-
-	t.Run("OPTIONS handler respects AllowHTTP setting", func(t *testing.T) {
-		// Create a test app with AllowHTTP=false
-		app := dindenault.New(logger)
-
-		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{testWildcardDomain},
-			AllowHTTP:      false,
-		})(app)
-
-		registrations := app.Registrations()
-		handler := registrations[0].Handler
-
-		// Test HTTP origin (should be rejected when AllowHTTP=false)
-		req := newTestRequest(t, "OPTIONS", "/test/path")
-		req.Header.Set("Origin", "http://app.example.com")
-
-		recorder := newTestResponseRecorder()
-		handler.ServeHTTP(recorder, req)
-
-		// Should return 403 Forbidden for HTTP origin when AllowHTTP=false
-		if recorder.Code != 403 {
-			t.Errorf("Expected status 403 for HTTP origin when AllowHTTP=false, got %d", recorder.Code)
-		}
-	})
-
-	t.Run("OPTIONS handler allows HTTP when AllowHTTP=true", func(t *testing.T) {
-		// Create a test app with AllowHTTP=true
-		app := dindenault.New(logger)
-
-		dindenault.WithConnectRPC(cors.Options{
-			AllowedDomains: []string{testWildcardDomain},
-			AllowHTTP:      true,
-		})(app)
-
-		registrations := app.Registrations()
-		handler := registrations[0].Handler
-
-		// Test HTTP origin (should be allowed when AllowHTTP=true)
-		req := newTestRequest(t, "OPTIONS", "/test/path")
-		req.Header.Set("Origin", "http://app.example.com")
-
-		recorder := newTestResponseRecorder()
-		handler.ServeHTTP(recorder, req)
-
-		// Should return 200 OK for HTTP origin when AllowHTTP=true
-		if recorder.Code != 200 {
-			t.Errorf("Expected status 200 for HTTP origin when AllowHTTP=true, got %d", recorder.Code)
-		}
-
-		// Verify origin is reflected in response
-		if origin := recorder.Header().Get("Access-Control-Allow-Origin"); origin != "http://app.example.com" {
-			t.Errorf("Expected Access-Control-Allow-Origin to be 'http://app.example.com', got '%s'", origin)
+		if len(opts.AllowedDomains) == 0 {
+			t.Error("Expected default domains to be applied")
 		}
 	})
 }
@@ -568,7 +363,7 @@ func TestWithService(t *testing.T) {
 		}
 	})
 
-	t.Run("global interceptors are NOT applied to non-Connect handlers", func(t *testing.T) {
+	t.Run("global interceptors with non-Connect handler panics at startup", func(t *testing.T) {
 		// Create a test app with global interceptors
 		app := dindenault.New(logger,
 			dindenault.WithInterceptors(
@@ -584,18 +379,15 @@ func TestWithService(t *testing.T) {
 		// Register service
 		dindenault.WithService("/regular", regularHandler)(app)
 
-		// Verify the service was registered
-		registrations := app.Registrations()
-		if len(registrations) != 1 {
-			t.Fatalf("Expected 1 registration, got %d", len(registrations))
-		}
+		// Preparing the app must panic — silently skipping interceptors
+		// (e.g. authentication) would be fail-open.
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic when interceptors cannot be applied")
+			}
+		}()
 
-		// Global interceptors should still be set in the app
-		if len(app.GlobalInterceptors()) != 1 {
-			t.Errorf("Expected 1 global interceptor in app, got %d", len(app.GlobalInterceptors()))
-		}
-		// The handler itself should be the original (interceptors only apply to Connect handlers)
-		// This is expected behavior - regular HTTP handlers don't support Connect interceptors
+		_ = app.Handle()
 	})
 	t.Run("multiple global interceptors are all applied", func(t *testing.T) {
 		// Create a test app with multiple global interceptors
@@ -635,20 +427,20 @@ func TestWithService(t *testing.T) {
 		})
 		dindenault.WithService("/api/test", testHandler)(app)
 
-		// Verify both CORS and service were registered
+		// CORS is applied as middleware at prepare time, not as a
+		// separate registration.
 		registrations := app.Registrations()
-		if len(registrations) != 2 { // 1 for OPTIONS handler, 1 for service
-			t.Fatalf("Expected 2 registrations (CORS + service), got %d", len(registrations))
+		if len(registrations) != 1 {
+			t.Fatalf("Expected 1 registration (service), got %d", len(registrations))
 		}
 
-		// Verify CORS interceptor was added
-		if len(app.GlobalInterceptors()) != 1 {
-			t.Errorf("Expected 1 global interceptor (CORS), got %d", len(app.GlobalInterceptors()))
+		if app.CORSOptions() == nil {
+			t.Error("Expected CORS options to be set")
 		}
 	})
 
 	t.Run("works with complex configuration combining multiple features", func(t *testing.T) {
-		// Create a test app with multiple global interceptors and CORS
+		// Create a test app with global interceptors and CORS
 		app := dindenault.New(logger,
 			dindenault.WithInterceptors(
 				dindenault.LoggingInterceptors(logger),
@@ -659,24 +451,23 @@ func TestWithService(t *testing.T) {
 			}),
 		)
 
-		// Register multiple services of different types
-		handler1 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})
-		mockHandler := &mockConnectHandler{interceptorsApplied: false}
+		// Register services that support interceptors
+		mockHandler1 := &mockConnectHandler{interceptorsApplied: false}
+		mockHandler2 := &mockConnectHandler{interceptorsApplied: false}
 
-		dindenault.WithService("/api/v1", handler1)(app)
-		dindenault.WithService("/api/v2", mockHandler)(app)
+		dindenault.WithService("/api/v1", mockHandler1)(app)
+		dindenault.WithService("/api/v2", mockHandler2)(app)
 
 		// Verify all registrations
 		registrations := app.Registrations()
-		if len(registrations) != 3 { // OPTIONS handler + 2 services
-			t.Fatalf("Expected 3 registrations, got %d", len(registrations))
+		if len(registrations) != 2 {
+			t.Fatalf("Expected 2 registrations, got %d", len(registrations))
 		}
 
-		// Verify all interceptors
-		if len(app.GlobalInterceptors()) != 2 { // Logging + CORS
-			t.Errorf("Expected 2 global interceptors, got %d", len(app.GlobalInterceptors()))
+		// Verify interceptors (logging only — CORS is middleware, not an
+		// interceptor)
+		if len(app.GlobalInterceptors()) != 1 {
+			t.Errorf("Expected 1 global interceptor, got %d", len(app.GlobalInterceptors()))
 		}
 	})
 

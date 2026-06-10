@@ -1,1 +1,4 @@
 .kiro/
+.idea/
+*.iml
+.go-version

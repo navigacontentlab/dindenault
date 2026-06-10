@@ -44,7 +44,7 @@ func New(tokenEndpoint string, options ...AccessTokenServiceOption) *AccessToken
 	}
 
 	if ats.client == nil {
-		ats.client = http.DefaultClient
+		ats.client = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 
 	return &ats
@@ -75,7 +75,11 @@ func (ats *AccessTokenService) NewAccessToken(navigaIDToken string) (*AccessToke
 		_ = res.Body.Close()
 	}()
 
-	bytes, err := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("token endpoint responded with: %s", res.Status)
+	}
+
+	bytes, err := io.ReadAll(io.LimitReader(res.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
 	}
@@ -87,8 +91,16 @@ func (ats *AccessTokenService) NewAccessToken(navigaIDToken string) (*AccessToke
 		return nil, fmt.Errorf("%w", err)
 	}
 
+	if atr.AccessToken == "" {
+		return nil, fmt.Errorf("token endpoint returned an empty access token")
+	}
+
 	return &atr, nil
 }
+
+// maxTokenResponseBytes bounds how much of a token endpoint response we
+// are willing to read.
+const maxTokenResponseBytes = 1 << 20 // 1 MiB
 
 // ErrNoToken is used to communicate that no bearer token was included
 // in the request.

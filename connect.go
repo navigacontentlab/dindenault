@@ -16,15 +16,24 @@ type Option func(*App)
 
 // WithInterceptors adds multiple connect interceptors at once.
 //
-// Example:
+// IMPORTANT: app-level interceptors can only be applied to handlers
+// that implement ConnectHandlerWithInterceptor. Standard connect-go
+// generated handlers do NOT implement it — for those, pass the
+// interceptors at handler creation instead:
 //
-//	app := dindenault.New(Logger,
-//		dindenault.WithInterceptors(
-//			dindenault.LoggingInterceptors(Logger),
-//			dindenault.TelemetryInterceptor(Logger, xrayProvider, telemetryOpts),
-//			dindenault.AuthInterceptors(Logger, "https://imas.example.com"),
-//		),
+//	path, handler := servicev1connect.NewServiceHandler(
+//	    impl,
+//	    connect.WithInterceptors(
+//	        dindenault.LoggingInterceptors(logger),
+//	        dindenault.AuthInterceptors(logger, "https://imas.example.com"),
+//	    ),
 //	)
+//
+// If WithInterceptors is configured and a registered handler cannot
+// receive the interceptors, the app panics at startup instead of
+// silently running the handler without them (which could mean running
+// without authentication). Handlers that intentionally should not
+// receive interceptors can be registered with WithPlainService.
 func WithInterceptors(interceptorsList ...connect.Interceptor) Option {
 	return func(a *App) {
 		a.globalInterceptors = append(a.globalInterceptors, interceptorsList...)
@@ -73,6 +82,11 @@ func WithNoopTelemetry() Option {
 
 // CORSInterceptors returns CORS interceptors for Connect RPC.
 // This creates interceptors that add CORS headers to Connect RPC responses.
+//
+// Prefer WithConnectRPC, which applies CORS at the HTTP level for all
+// registered handlers and also answers preflight requests. Use this
+// interceptor only when you need CORS on a single handler created with
+// connect.WithInterceptors.
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
 func CORSInterceptors(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
@@ -178,6 +192,24 @@ type ConnectHandlerWithInterceptor interface {
 	WithInterceptors(...connect.Interceptor) http.Handler
 }
 
+// WithPlainService registers a plain HTTP handler at the specified path,
+// explicitly opting out of app-level interceptors configured with
+// WithInterceptors. Use this for non-Connect handlers (health checks,
+// webhooks, and similar) registered on an App that uses WithInterceptors.
+//
+// Note that opting out also opts out of any authentication configured
+// via app-level interceptors — the handler is responsible for its own
+// access control.
+func WithPlainService(path string, handler http.Handler) Option {
+	return func(a *App) {
+		a.registrations = append(a.registrations, Registration{
+			Path:                   path,
+			Handler:                handler,
+			SkipGlobalInterceptors: true,
+		})
+	}
+}
+
 // WithService registers an HTTP handler at the specified path.
 // This is the only service registration method in Dindenault.
 //
@@ -214,18 +246,23 @@ func WithService(path string, handler http.Handler) Option {
 	}
 }
 
-// WithConnectRPC adds optional CORS support for Connect RPC services.
+// WithConnectRPC adds optional CORS support for all registered services.
 //
 // Use this when your service needs to be accessed from web browsers.
 // For internal services (backend-to-backend), simply omit this option.
 //
-// This automatically handles:
-//  1. CORS headers for all Connect RPC responses via an interceptor
-//  2. OPTIONS preflight requests for all registered Connect services
+// CORS is applied as an HTTP-level middleware around every registered
+// handler, which automatically handles:
+//  1. CORS headers on all responses (including error responses)
+//  2. OPTIONS preflight requests
 //  3. Origin validation against the allowed domains list
 //  4. Connect-specific headers and methods
 //
 // If no domains are specified in the options, default domains will be used.
+//
+// Note: when AllowedDomains contains "*", Access-Control-Allow-Credentials
+// is not set — reflecting arbitrary origins with credentials enabled
+// would disable the browser's cross-origin protections entirely.
 //
 // Example - Web service with CORS:
 //
@@ -256,88 +293,10 @@ func WithConnectRPC(opts cors.Options) Option {
 			opts.AllowedDomains = cors.DefaultDomains()
 		}
 
-		// Add the CORS interceptor for all Connect services
-		a.globalInterceptors = append(
-			a.globalInterceptors,
-			CORSInterceptors(opts.AllowedDomains, opts.AllowHTTP),
-		)
-
-		// Add a catch-all OPTIONS handler that works with Connect RPC
-		a.registrations = append(a.registrations, Registration{
-			Path: "/", // Catch all paths
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Only handle OPTIONS requests
-				if r.Method != http.MethodOptions {
-					// Let other handlers deal with non-OPTIONS requests
-					w.WriteHeader(http.StatusNotFound)
-
-					return
-				}
-
-				// Get origin from request
-				origin := r.Header.Get("Origin")
-				if origin == "" {
-					w.WriteHeader(http.StatusBadRequest)
-
-					return
-				}
-
-				// Use the standard validator for consistency
-				originValidator := cors.StandardAllowOriginFunc(opts.AllowHTTP, opts.AllowedDomains)
-				if !originValidator(origin) {
-					w.WriteHeader(http.StatusForbidden)
-
-					return
-				}
-
-				// Set CORS headers for Connect RPC preflight
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
-
-				w.WriteHeader(http.StatusOK)
-			}),
-		})
+		a.corsOptions = &opts
 
 		a.logger.Info("Connect RPC CORS support added globally",
 			"allowed_domains", opts.AllowedDomains,
 			"allow_http", opts.AllowHTTP)
 	}
 }
-
-// applyGlobalInterceptors applies global interceptors to a Connect handler.
-func (a *App) applyGlobalInterceptors(handler http.Handler) http.Handler {
-	// If there are no global interceptors, return the handler as is
-	if len(a.globalInterceptors) == 0 {
-		return handler
-	}
-
-	// If the handler implements ConnectHandlerWithInterceptor, apply the interceptors
-	if interceptorHandler, ok := handler.(ConnectHandlerWithInterceptor); ok {
-		return interceptorHandler.WithInterceptors(a.globalInterceptors...)
-	}
-
-	// Otherwise, just return the original handler
-	a.logger.Warn("Handler does not implement ConnectHandlerWithInterceptor, global interceptors not applied",
-		"interceptors", len(a.globalInterceptors))
-
-	return handler
-}
-
-// chainInterceptors chains multiple interceptors into a single interceptor.
-// This is a replacement for connect.ChainInterceptors for older versions of the library.
-//
-
-// func chainInterceptors(interceptors ...connect.Interceptor) connect.Interceptor {
-//	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-//		// Apply interceptors in reverse order
-//		// Last interceptor is executed first, then the second-to-last, and so on
-//		for i := len(interceptors) - 1; i >= 0; i-- {
-//			next = interceptors[i].WrapUnary(next)
-//		}
-//
-//		return next
-//	})
-//}

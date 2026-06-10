@@ -94,10 +94,14 @@ func Logging(logger *slog.Logger) connect.Interceptor {
 // Unlike other interceptors, CORS works at the HTTP header level, so this interceptor
 // adds appropriate CORS headers to the response headers.
 //
+// Note: prefer cors.Middleware (applied by dindenault.WithConnectRPC), which
+// also handles preflight requests and works for any http.Handler.
+//
 //nolint:ireturn
 func CORS(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
 	// Use the standardAllowOriginFunc from cors.go for consistency
 	originValidator := cors.StandardAllowOriginFunc(allowHTTP, allowedOrigins)
+	wildcard := cors.HasWildcard(allowedOrigins)
 
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -108,11 +112,8 @@ func CORS(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
 				return next(ctx, req)
 			}
 
-			// Check if the origin is allowed using the standard validator
-			originAllowed := originValidator(origin)
-
 			// If origin is not allowed, continue without CORS headers
-			if !originAllowed {
+			if !originValidator(origin) {
 				return next(ctx, req)
 			}
 
@@ -122,21 +123,14 @@ func CORS(allowedOrigins []string, allowHTTP bool) connect.Interceptor {
 				// If there was an error, we still need to add CORS headers to the error response
 				var connectErr *connect.Error
 				if errors.As(err, &connectErr) {
-					// Add CORS headers to the error
-					connectErr.Meta().Set("Access-Control-Allow-Origin", origin)
-					connectErr.Meta().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-					connectErr.Meta().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
-					connectErr.Meta().Set("Access-Control-Allow-Credentials", "true")
+					cors.SetHeaders(connectErr.Meta(), origin, wildcard)
 				}
 
 				return nil, err
 			}
 
 			// Add CORS headers to the response
-			resp.Header().Set("Access-Control-Allow-Origin", origin)
-			resp.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-			resp.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Connect-Protocol-Version, Authorization, X-Requested-With")
-			resp.Header().Set("Access-Control-Allow-Credentials", "true")
+			cors.SetHeaders(resp.Header(), origin, wildcard)
 
 			return resp, nil
 		}
