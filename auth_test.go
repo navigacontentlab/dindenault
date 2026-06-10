@@ -23,18 +23,23 @@ func TestAuthorizeWithDetails(t *testing.T) {
 	assert.Equal(t, "Doe", result.FamilyName)
 	assert.Equal(t, "john.doe@example.com", result.Email)
 	assert.Contains(t, result.Permissions, "content:read")
-	assert.Contains(t, result.Permissions, "content:write")
 	assert.Contains(t, result.Groups, "editors")
+
+	// Unit permissions are exposed with their unit context preserved,
+	// not flattened into the org-level permission list.
+	assert.NotContains(t, result.Permissions, "content:write")
+	assert.Contains(t, result.UnitPermissions["unit1"], "content:write")
 
 	// Test with permission that exists in org permissions
 	result, err = da.AuthorizeWithDetails(ctx, "content:read")
 	require.NoError(t, err)
 	assert.Equal(t, "test-org", result.Organization)
 
-	// Test with permission that exists in unit permissions
+	// A permission that only exists in a unit must NOT satisfy an
+	// organization-level permission check.
 	result, err = da.AuthorizeWithDetails(ctx, "content:write")
-	require.NoError(t, err)
-	assert.Equal(t, "test-org", result.Organization)
+	require.Error(t, err)
+	assert.Nil(t, result)
 
 	// Test with permission that doesn't exist
 	result, err = da.AuthorizeWithDetails(ctx, "admin:manage")
@@ -111,14 +116,35 @@ func TestHasPermission(t *testing.T) {
 	// Test with permission that exists in org permissions
 	assert.True(t, da.HasPermission(ctx, "content:read"))
 
-	// Test with permission that exists in unit permissions
-	assert.True(t, da.HasPermission(ctx, "content:write"))
+	// A permission that only exists in a unit must NOT satisfy an
+	// organization-level permission check.
+	assert.False(t, da.HasPermission(ctx, "content:write"))
 
 	// Test with permission that doesn't exist
 	assert.False(t, da.HasPermission(ctx, "admin:manage"))
 
 	// Test with empty context
 	assert.False(t, da.HasPermission(context.Background(), "content:read"))
+}
+
+func TestHasPermissionInUnit(t *testing.T) {
+	ctx := createAuthContext()
+
+	// Permission granted directly in the unit
+	assert.True(t, da.HasPermissionInUnit(ctx, "unit1", "content:write"))
+
+	// Org-level permissions are inherited by units
+	assert.True(t, da.HasPermissionInUnit(ctx, "unit1", "content:read"))
+
+	// Permission from another unit does not leak
+	assert.False(t, da.HasPermissionInUnit(ctx, "unit1", "content:publish"))
+
+	// Unknown unit only has org-level permissions
+	assert.True(t, da.HasPermissionInUnit(ctx, "unknown", "content:read"))
+	assert.False(t, da.HasPermissionInUnit(ctx, "unknown", "content:write"))
+
+	// Test with empty context
+	assert.False(t, da.HasPermissionInUnit(context.Background(), "unit1", "content:write"))
 }
 
 // Helper to create a context with mock auth info.

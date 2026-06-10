@@ -20,7 +20,8 @@ import (
 //   - FamilyName: The user's last name
 //   - Email: The user's email address
 //   - UserID: The user's unique identifier from the JWT sub claim
-//   - Permissions: All permissions granted to the user (org + unit permissions flattened)
+//   - Permissions: The organization-level permissions granted to the user
+//   - UnitPermissions: Unit-specific permissions, keyed by unit
 //   - Groups: All groups the user belongs to
 type AuthResult struct {
 	// Organization is the authenticated user's organization
@@ -33,33 +34,29 @@ type AuthResult struct {
 	Email string
 	// UserID is the user's unique identifier from the sub claim
 	UserID string
-	// Permissions is the list of permissions granted to the user
+	// Permissions is the list of organization-level permissions
+	// granted to the user
 	Permissions []string
+	// UnitPermissions contains unit-specific permissions, keyed by
+	// unit identifier
+	UnitPermissions map[string][]string
 	// Groups is the list of groups the user belongs to
 	Groups []string
 }
 
 // checkUserPermission verifies if the user has the requested permission
-// either at organization level or in any unit.
+// at the organization level.
+//
+// Note: unit-scoped permissions do NOT satisfy this check. A permission
+// granted in a single unit must not grant organization-wide access —
+// use HasPermissionInUnit for unit-scoped checks.
 func checkUserPermission(claims navigaid.Claims, permission string) bool {
 	// If no permission specified, skip check
 	if permission == "" {
 		return true
 	}
 
-	// Check organization-level permissions first
-	if claims.HasPermissionsInOrganisation(permission) {
-		return true
-	}
-
-	// Check if permission exists in any unit
-	for unit := range claims.Permissions.Units {
-		if claims.HasPermissionsInUnit(unit, permission) {
-			return true
-		}
-	}
-
-	return false
+	return claims.HasPermissionsInOrganisation(permission)
 }
 
 // AuthorizeWithDetails retrieves authentication details and checks permissions in one call.
@@ -107,24 +104,22 @@ func AuthorizeWithDetails(ctx context.Context, permission string) (*AuthResult, 
 			fmt.Errorf("missing required permission: %s", permission))
 	}
 
-	// Extract all org permissions
-	var allPermissions []string
-	allPermissions = append(allPermissions, auth.Claims.Permissions.Org...)
-
-	// Add unit permissions (flattened)
-	for _, unitPerms := range auth.Claims.Permissions.Units {
-		allPermissions = append(allPermissions, unitPerms...)
+	// Copy unit permissions with their unit context preserved
+	unitPermissions := make(map[string][]string, len(auth.Claims.Permissions.Units))
+	for unit, unitPerms := range auth.Claims.Permissions.Units {
+		unitPermissions[unit] = append([]string(nil), unitPerms...)
 	}
 
 	// Create and return the result with all available user information
 	result := &AuthResult{
-		Organization: auth.Claims.Org,
-		GivenName:    auth.Claims.Userinfo.GivenName,
-		FamilyName:   auth.Claims.Userinfo.FamilyName,
-		Email:        auth.Claims.Userinfo.Email,
-		UserID:       auth.Claims.Subject,
-		Permissions:  allPermissions,
-		Groups:       auth.Claims.Groups,
+		Organization:    auth.Claims.Org,
+		GivenName:       auth.Claims.Userinfo.GivenName,
+		FamilyName:      auth.Claims.Userinfo.FamilyName,
+		Email:           auth.Claims.Userinfo.Email,
+		UserID:          auth.Claims.Subject,
+		Permissions:     append([]string(nil), auth.Claims.Permissions.Org...),
+		UnitPermissions: unitPermissions,
+		Groups:          auth.Claims.Groups,
 	}
 
 	return result, nil
@@ -220,11 +215,13 @@ func EmailFromContext(ctx context.Context) string {
 	return auth.Claims.Userinfo.Email
 }
 
-// HasPermission checks if the user has the specified permission.
+// HasPermission checks if the user has the specified permission at the
+// organization level.
 //
-// This function checks both organization-level and unit-level permissions.
-// It's useful for conditional logic based on permissions without failing
-// the request.
+// Unit-scoped permissions do not satisfy this check — use
+// HasPermissionInUnit for unit-scoped checks. HasPermission is useful
+// for conditional logic based on permissions without failing the
+// request.
 //
 // Returns:
 //   - bool: true if the user has the permission, false otherwise
@@ -247,4 +244,26 @@ func HasPermission(ctx context.Context, permission string) bool {
 	}
 
 	return checkUserPermission(auth.Claims, permission)
+}
+
+// HasPermissionInUnit checks if the user has the specified permission
+// in the given unit, either directly or inherited from the
+// organization.
+//
+// Example:
+//
+//	if dindenault.HasPermissionInUnit(ctx, "HQ", "admin:access") {
+//	    // Allow unit-scoped admin operation
+//	}
+func HasPermissionInUnit(ctx context.Context, unit, permission string) bool {
+	auth, err := navigaid.GetAuth(ctx)
+	if err != nil {
+		return false
+	}
+
+	if permission == "" {
+		return true
+	}
+
+	return auth.Claims.HasPermissionsInUnit(unit, permission)
 }

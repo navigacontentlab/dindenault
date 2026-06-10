@@ -35,10 +35,6 @@ func ConnectInterceptor(logger *slog.Logger, jwks *JWKS) connect.Interceptor {
 				return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token"))
 			}
 
-			// Add annotations
-			AddUserAnnotation(ctx, claims.Subject)
-			AddAnnotation(ctx, "imid_org", claims.Org)
-
 			// Set auth info in context
 			newCtx := SetAuth(ctx, AuthInfo{
 				AccessToken: accessToken,

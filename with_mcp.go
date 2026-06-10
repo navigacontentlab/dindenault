@@ -52,6 +52,9 @@ func WithMCP(path string, tools ...mcp.Tool) Option {
 		a.registrations = append(a.registrations, Registration{
 			Path:    path,
 			Handler: server,
+			// MCP handlers are plain HTTP handlers; Connect interceptors
+			// cannot be applied to them.
+			SkipGlobalInterceptors: true,
 		})
 	}
 }
@@ -77,6 +80,10 @@ func WithMCP(path string, tools ...mcp.Tool) Option {
 //	    tool1, tool2,
 //	)
 func WithMCPAuth(path string, logger *slog.Logger, imasURL string, authOpts []mcp.AuthOption, tools ...mcp.Tool) Option {
+	if imasURL == "" {
+		panic("imasURL cannot be empty for WithMCPAuth")
+	}
+
 	return func(a *App) {
 		server := mcp.NewServer("dindenault", "1.0.0", tools...)
 		jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL))
@@ -85,6 +92,9 @@ func WithMCPAuth(path string, logger *slog.Logger, imasURL string, authOpts []mc
 		a.registrations = append(a.registrations, Registration{
 			Path:    path,
 			Handler: handler,
+			// MCP handlers are plain HTTP handlers; Connect interceptors
+			// cannot be applied to them.
+			SkipGlobalInterceptors: true,
 		})
 	}
 }

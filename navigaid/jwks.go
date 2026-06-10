@@ -14,10 +14,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-const defaultJwksTTL = 10 * time.Minute
+const (
+	defaultJwksTTL = 10 * time.Minute
+
+	// jwksRetryBackoff is how long we keep serving stale keys before
+	// retrying a failed JWKS refresh.
+	jwksRetryBackoff = 30 * time.Second
+
+	// defaultHTTPTimeout bounds JWKS fetches so a slow or unreachable
+	// IMAS endpoint cannot hang requests until the Lambda times out.
+	defaultHTTPTimeout = 10 * time.Second
+)
 
 // ImasJWKSEndpoint is a helper function that returns the v1 JWKS
 // endpoint URL given an URL that points to the IMAS service.
@@ -27,9 +37,11 @@ func ImasJWKSEndpoint(serviceURL string) string {
 
 // JWKS can validate access tokens using published JWKS.
 type JWKS struct {
-	client       *http.Client
-	jwksEndpoint string
-	ttl          time.Duration
+	client           *http.Client
+	jwksEndpoint     string
+	ttl              time.Duration
+	expectedIssuer   string
+	expectedAudience string
 
 	m              sync.Mutex
 	jwksStaleAfter time.Time
@@ -57,6 +69,22 @@ func WithJwksClient(client *http.Client) JWKSOption {
 	}
 }
 
+// WithExpectedIssuer makes token validation require that the "iss"
+// claim matches the given value.
+func WithExpectedIssuer(issuer string) JWKSOption {
+	return func(j *JWKS) {
+		j.expectedIssuer = issuer
+	}
+}
+
+// WithExpectedAudience makes token validation require that the "aud"
+// claim contains the given value.
+func WithExpectedAudience(audience string) JWKSOption {
+	return func(j *JWKS) {
+		j.expectedAudience = audience
+	}
+}
+
 // SetValidationFunc sets a custom validation function for testing.
 func (j *JWKS) SetValidationFunc(fn ValidateFunc) {
 	j.validate = fn
@@ -74,7 +102,7 @@ func NewJWKS(jwksEndpoint string, options ...JWKSOption) *JWKS {
 	}
 
 	if j.client == nil {
-		j.client = http.DefaultClient
+		j.client = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 
 	return &j
@@ -118,13 +146,20 @@ func (j *JWKS) getKey(kid string) (*jwksKey, error) {
 	// ensure up-to-date version of our jwks
 	if time.Now().After(j.jwksStaleAfter) {
 		res, err := j.fetchJWKS()
-		if err != nil {
+
+		switch {
+		case err == nil:
+			j.jwks = res
+			j.jwksStaleAfter = time.Now().Add(j.ttl)
+		case j.jwks != nil:
+			// Refresh failed but we have previously fetched keys: keep
+			// serving them and back off before retrying, instead of
+			// failing all authentication on a transient JWKS outage.
+			j.jwksStaleAfter = time.Now().Add(jwksRetryBackoff)
+		default:
 			return nil, fmt.Errorf(
 				"failed to fetch jwks: %w", err)
 		}
-
-		j.jwks = res
-		j.jwksStaleAfter = time.Now().Add(j.ttl)
 	}
 
 	// find the correct key
@@ -153,36 +188,59 @@ func (j *JWKS) Validate(accessToken string) (Claims, error) {
 // ValidateToken tries to validate a given JWT token by first parsing
 // it and then looking up the "kid" to match with a jwk (which are
 // cached locally).
+//
+// Validation requires an RSA signature from a known key, an expiration
+// time ("exp"), and a matching token type. If the JWKS was configured
+// with WithExpectedIssuer or WithExpectedAudience those claims are
+// verified as well.
 func (j *JWKS) ValidateToken(token string, tokenType string) (Claims, error) {
 	var claims Claims
 
+	parserOpts := []jwt.ParserOption{
+		jwt.WithValidMethods([]string{"RS256", "RS384", "RS512"}),
+		jwt.WithExpirationRequired(),
+	}
+
+	if j.expectedIssuer != "" {
+		parserOpts = append(parserOpts, jwt.WithIssuer(j.expectedIssuer))
+	}
+
+	if j.expectedAudience != "" {
+		parserOpts = append(parserOpts, jwt.WithAudience(j.expectedAudience))
+	}
+
 	t, err := jwt.ParseWithClaims(token, &claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return Claims{}, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 
-		if claims.TokenType != tokenType {
-			return Claims{}, fmt.Errorf("unexpected token type %q", claims.TokenType)
+		kid, ok := token.Header["kid"].(string)
+		if !ok || kid == "" {
+			return nil, errors.New("token has no kid header")
 		}
 
-		jwk, err := j.getKey(token.Header["kid"].(string))
+		jwk, err := j.getKey(kid)
 		if err != nil {
-			return Claims{}, errors.New("unknown key id")
+			return nil, errors.New("unknown key id")
 		}
 
 		// ensure we have the same algorithm
 		if token.Method.Alg() != jwk.Alg {
-			return Claims{}, errors.New("algorithm is not the same")
+			return nil, errors.New("algorithm is not the same")
 		}
 
 		return jwk.publicKey()
-	})
+	}, parserOpts...)
 	if err != nil {
 		return Claims{}, fmt.Errorf("failed to parse token: %w", err)
 	}
 
 	if !t.Valid {
 		return Claims{}, errors.New("token is invalid")
+	}
+
+	if claims.TokenType != tokenType {
+		return Claims{}, fmt.Errorf("unexpected token type %q", claims.TokenType)
 	}
 
 	return claims, nil
