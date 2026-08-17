@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/aws/aws-xray-sdk-go v1.8.5
-	github.com/navigacontentlab/dindenault v1.5.0
+	github.com/navigacontentlab/dindenault v1.5.1
 )
 
 require (
