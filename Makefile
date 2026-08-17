@@ -1,4 +1,4 @@
-.PHONY: release
+.PHONY: release bump-submodules
 release:
 	@if [ -z "$(MODULE)" ]; then \
 		echo "❌ You must set MODULE (e.g. make release MODULE=service2 BUMP=patch or MODULE=root BUMP=patch)"; \
@@ -54,3 +54,22 @@ release:
 	git tag -a "$$NEW_TAG" -m "Release $$NEW_TAG"; \
 	git push origin "$$NEW_TAG"; \
 	echo "✅ Released $$NEW_TAG"
+
+# Point the otel/xray submodules at a released root version and re-tidy.
+# Run this after releasing a new root tag, before releasing the submodules:
+#   make release MODULE=root BUMP=minor      # e.g. tags v1.6.0
+#   make bump-submodules VERSION=v1.6.0      # bump require + go mod tidy
+#   git commit -am "Bump submodules to dindenault v1.6.0"
+#   make release MODULE=otel BUMP=minor && make release MODULE=xray BUMP=minor
+bump-submodules:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "❌ You must set VERSION (e.g. make bump-submodules VERSION=v1.6.0)"; \
+		exit 1; \
+	fi
+	@for m in otel xray; do \
+		echo "⬆️  $$m -> dindenault $(VERSION)"; \
+		( cd "$$m" && \
+			go get github.com/navigacontentlab/dindenault@$(VERSION) && \
+			go mod tidy ) || exit 1; \
+	done
+	@echo "✅ Submodules updated. Commit go.mod/go.sum, then release otel and xray."
