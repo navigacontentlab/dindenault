@@ -55,10 +55,18 @@ release:
 	git push origin "$$NEW_TAG"; \
 	echo "✅ Released $$NEW_TAG"
 
+	@if [ "$(MODULE)" = "root" ]; then \
+		LATEST_ROOT=$$(git tag -l "v*" | sort -V | tail -n1); \
+		echo "🔁 Auto-bumping submodules to $$LATEST_ROOT"; \
+		GOPROXY=direct GOSUMDB=off $(MAKE) bump-submodules VERSION="$$LATEST_ROOT"; \
+	fi
+
 # Point the otel/xray submodules at a released root version and re-tidy.
-# Run this after releasing a new root tag, before releasing the submodules:
-#   make release MODULE=root BUMP=minor      # e.g. tags v1.6.0
+# `make release MODULE=root` runs this automatically for the new tag, so you
+# normally only invoke it directly to re-pin to an existing published version:
 #   make bump-submodules VERSION=v1.6.0      # bump require + go mod tidy
+# Typical full release flow:
+#   make release MODULE=root BUMP=minor      # tags v1.6.0 AND auto-bumps submodules
 #   git commit -am "Bump submodules to dindenault v1.6.0"
 #   make release MODULE=otel BUMP=minor && make release MODULE=xray BUMP=minor
 bump-submodules:
