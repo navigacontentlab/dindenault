@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/aws/aws-xray-sdk-go v1.8.5
-	github.com/navigacontentlab/dindenault v1.0.0
+	github.com/navigacontentlab/dindenault v1.5.0
 )
 
 require (
@@ -25,6 +25,3 @@ require (
 	google.golang.org/grpc v1.81.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-// Use local version of dindenault during development
-replace github.com/navigacontentlab/dindenault => ../
