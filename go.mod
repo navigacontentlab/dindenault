@@ -1,6 +1,6 @@
 module github.com/navigacontentlab/dindenault
 
-go 1.25
+go 1.25.0
 
 require (
 	connectrpc.com/connect v1.18.1
@@ -12,7 +12,7 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	golang.org/x/net v0.39.0 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
