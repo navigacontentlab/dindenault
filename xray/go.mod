@@ -2,6 +2,8 @@ module github.com/navigacontentlab/dindenault/xray
 
 go 1.25.7
 
+toolchain go1.25.13
+
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/aws/aws-xray-sdk-go v1.8.5
