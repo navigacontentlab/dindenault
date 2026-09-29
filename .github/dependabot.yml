@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - "/"
+      - "/otel"
+      - "/xray"
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+    # otel and xray depend on the released root module; bump it with
+    # `make bump-submodules` after a root release instead.
+    ignore:
+      - dependency-name: github.com/navigacontentlab/dindenault
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
