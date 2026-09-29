@@ -120,6 +120,7 @@ jobs:
       # Fails only when our code reaches a vulnerable symbol. Module-level
       # findings without a call path (e.g. aws-sdk-go v1 via aws-xray-sdk-go)
       # are reported but don't fail the build.
+      # govulncheck v1.8.0+ requires Go 1.26; keep in step with go-version above.
       - name: Run govulncheck
         working-directory: ${{ matrix.module }}
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
