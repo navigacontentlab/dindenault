@@ -35,8 +35,8 @@ github.com/jmespath/go-jmespath/internal/testify v1.5.1 h1:shLQSRRSCCPj3f2gpwzGw
 github.com/jmespath/go-jmespath/internal/testify v1.5.1/go.mod h1:L3OGu8Wl2/fWfCI6z80xFu9LTZmf1ZRjMHUOPmWr69U=
 github.com/klauspost/compress v1.18.7 h1:aUyZsS4kH3QTKurYhAOwAHxllVPnOthb3vPfnF1Ehjw=
 github.com/klauspost/compress v1.18.7/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
-github.com/navigacontentlab/dindenault v1.7.0 h1:dCltt47O+hTo6TnrWcwGXVeJBvPNpAKooBTvTbY6/ok=
-github.com/navigacontentlab/dindenault v1.7.0/go.mod h1:5QwW3ngs5LE5S+fUOPB6vcR4OxO2ZPT8Sg+tYR7k7nM=
+github.com/navigacontentlab/dindenault v1.7.1 h1:gc09okVCYIgUG9RANXLR/xXu9TbPPJuAvD195SdjEVE=
+github.com/navigacontentlab/dindenault v1.7.1/go.mod h1:5QwW3ngs5LE5S+fUOPB6vcR4OxO2ZPT8Sg+tYR7k7nM=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

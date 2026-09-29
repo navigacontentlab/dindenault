@@ -7,7 +7,7 @@ toolchain go1.25.13
 require (
 	connectrpc.com/connect v1.21.0
 	github.com/aws/aws-xray-sdk-go v1.8.5
-	github.com/navigacontentlab/dindenault v1.7.0
+	github.com/navigacontentlab/dindenault v1.7.1
 )
 
 require (
