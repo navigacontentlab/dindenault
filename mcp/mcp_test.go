@@ -158,6 +158,27 @@ func TestToolsList_DefaultSchema(t *testing.T) {
 	assert.Equal(t, "object", schema["type"])
 }
 
+func TestToolsList_Annotations(t *testing.T) {
+	annotated := echoTool()
+	annotated.Annotations = mcp.ReadOnly()
+
+	server := mcp.NewServer("s", "1", annotated, failTool())
+
+	rr := post(t, server, `{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}`)
+
+	resp := decodeResponse(t, rr.Body)
+	result := resp["result"].(map[string]any)
+	tools := result["tools"].([]any)
+	require.Len(t, tools, 2)
+
+	annotations, ok := tools[0].(map[string]any)["annotations"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, map[string]any{"readOnlyHint": true}, annotations)
+
+	_, present := tools[1].(map[string]any)["annotations"]
+	assert.False(t, present, "tools without annotations must not send the field")
+}
+
 func TestToolsCall_Success(t *testing.T) {
 	server := mcp.NewServer("s", "1", echoTool())
 

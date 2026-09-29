@@ -126,8 +126,43 @@ type Tool struct {
 	// Leave empty to handle authorization in the Handler itself.
 	RequiredPermissions []string
 
+	// Annotations are optional hints about the tool's behavior, sent in
+	// tools/list. Clients use them for UX decisions, e.g. skipping the
+	// confirmation prompt for read-only tools. They are hints, not a
+	// security boundary. Leave nil to send none.
+	Annotations *ToolAnnotations
+
 	// Handler is invoked when the tool is called.
 	Handler ToolHandler
+}
+
+// ToolAnnotations describes a tool's behavior as defined by the MCP spec.
+// Unset hints take the spec defaults: readOnlyHint false, destructiveHint
+// true, idempotentHint false, openWorldHint true.
+type ToolAnnotations struct {
+	// Title is a human-readable name for the tool.
+	Title string `json:"title,omitempty"`
+
+	// ReadOnlyHint reports that the tool does not modify its environment.
+	ReadOnlyHint *bool `json:"readOnlyHint,omitempty"`
+
+	// DestructiveHint reports that the tool may perform destructive
+	// updates. Only meaningful when ReadOnlyHint is false.
+	DestructiveHint *bool `json:"destructiveHint,omitempty"`
+
+	// IdempotentHint reports that repeated calls with the same arguments
+	// have no additional effect. Only meaningful when ReadOnlyHint is false.
+	IdempotentHint *bool `json:"idempotentHint,omitempty"`
+
+	// OpenWorldHint reports that the tool interacts with external entities.
+	OpenWorldHint *bool `json:"openWorldHint,omitempty"`
+}
+
+// ReadOnly returns annotations for a tool that only reads data.
+func ReadOnly() *ToolAnnotations {
+	readOnly := true
+
+	return &ToolAnnotations{ReadOnlyHint: &readOnly}
 }
 
 // Server implements a stateless MCP Streamable HTTP server.
@@ -218,6 +253,7 @@ func (s *Server) handleToolsList(w http.ResponseWriter, req *jsonRPCRequest) {
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: schema,
+			Annotations: t.Annotations,
 		})
 	}
 
@@ -317,9 +353,10 @@ type serverInfo struct {
 }
 
 type toolDefinition struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	InputSchema json.RawMessage  `json:"inputSchema"`
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
 }
 
 type toolsListResult struct {

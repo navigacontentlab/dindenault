@@ -885,11 +885,28 @@ type Tool struct {
     Description         string          // Explains what the tool does — shown to the model
     InputSchema         json.RawMessage // JSON Schema for the arguments (optional)
     RequiredPermissions []string        // Org-level permissions required to call the tool (optional)
+    Annotations         *ToolAnnotations // Behavior hints sent in tools/list (optional)
     Handler             ToolHandler     // func(ctx, json.RawMessage) (json.RawMessage, error)
 }
 ```
 
 If `InputSchema` is `nil`, the server defaults to `{"type":"object","properties":{}}`.
+
+`Annotations` carries the MCP spec's tool hints (`title`, `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`). Clients such as
+ChatGPT and VS Code skip their confirmation prompt for tools marked
+read-only. Use `mcp.ReadOnly()` for the common case:
+
+```go
+mcp.Tool{
+    Name:        "search",
+    Description: "Search content",
+    Annotations: mcp.ReadOnly(),
+    Handler:     search,
+}
+```
+
+Annotations are hints for the client's UX, not an authorization mechanism.
 
 ### Per-Tool Authorization
 
