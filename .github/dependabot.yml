@@ -15,6 +15,9 @@ updates:
     # `make bump-submodules` after a root release instead.
     ignore:
       - dependency-name: github.com/navigacontentlab/dindenault
+      # v1.55+ requires Go 1.26. Remove when we move to Go 1.26.
+      - dependency-name: github.com/aws/aws-lambda-go
+        versions: [">= 1.55.0"]
 
   - package-ecosystem: github-actions
     directory: "/"
