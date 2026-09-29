@@ -302,6 +302,8 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		return
 	}
 
+	ctx = withMetaTraceParent(ctx, params.Meta)
+
 	args := params.Arguments
 	if len(args) == 0 {
 		args = json.RawMessage("{}")
@@ -434,6 +436,7 @@ type toolsListResult struct {
 type toolsCallParams struct {
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
+	Meta      map[string]any  `json:"_meta,omitempty"`
 }
 
 type contentItem struct {

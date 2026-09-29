@@ -94,7 +94,8 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 		var peek struct {
 			Method string `json:"method"`
 			Params struct {
-				Name string `json:"name"`
+				Name string         `json:"name"`
+				Meta map[string]any `json:"_meta"`
 			} `json:"params"`
 		}
 
@@ -117,7 +118,7 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 		// here — failed calls are what a security team alerts on.
 		rejectCall := func(reason string) {
 			if peek.Method == methodToolsCall {
-				auditRejected(r, cfg, next, peek.Params.Name, reason)
+				auditRejected(r, cfg, next, peek.Params.Name, peek.Params.Meta, reason)
 			}
 
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -148,7 +149,7 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 	})
 }
 
-func auditRejected(r *http.Request, cfg *authConfig, next http.Handler, tool, reason string) {
+func auditRejected(r *http.Request, cfg *authConfig, next http.Handler, tool string, meta map[string]any, reason string) {
 	sink, name := cfg.audit, ""
 
 	if srv, ok := next.(*Server); ok {
@@ -162,7 +163,7 @@ func auditRejected(r *http.Request, cfg *authConfig, next http.Handler, tool, re
 		sink = DefaultAuditSink
 	}
 
-	ctx := withCorrelation(r.Context(), r)
+	ctx := withMetaTraceParent(withCorrelation(r.Context(), r), meta)
 	event := newAuditEvent(ctx, auditServiceName(name), tool)
 	event.Outcome = OutcomeUnauthenticated
 	event.Error = reason

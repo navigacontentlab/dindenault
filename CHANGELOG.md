@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-09-29
+
+### Fixed
+- MCP: a tools/call's `params._meta.traceparent` is used when the request
+  has no `traceparent` header. Strands' `MCPClient` (and other clients that
+  propagate OpenTelemetry context per call) send it there, so v1.7.0 audit
+  events and downstream requests carried no traceparent for them. The header
+  still wins when both are present.
+
 ## [1.7.0] - 2026-09-29
 
 ### Added

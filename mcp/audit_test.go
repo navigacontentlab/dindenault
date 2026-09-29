@@ -293,3 +293,57 @@ func TestNewHTTPClient_ForwardsCorrelationHeaders(t *testing.T) {
 	assert.Equal(t, testTurnID, got.Get(mcp.HeaderTurnID))
 	assert.Empty(t, got.Get(mcp.HeaderTraceParent), "absent headers are not invented")
 }
+
+// ── traceparent from params._meta ─────────────────────────────────────────────
+
+const metaTraceParent = "00-b10d0934bdecf35cd484e3e4192abe7e-4bea83b5ef762bb7-01"
+
+func callWithMeta(tool, meta string) string {
+	return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool +
+		`","arguments":{},"_meta":` + meta + `}}`
+}
+
+func TestAudit_TraceParentFromMeta(t *testing.T) {
+	var downstream http.Header
+
+	ds := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		downstream = r.Header.Clone()
+	}))
+	t.Cleanup(ds.Close)
+
+	rec := &auditRecorder{}
+	server := mcp.NewServer("s", "1", fetchTool(ds.URL, nil)).WithAuditSink(rec.sink)
+	serve(t, server, callWithMeta("fetch", `{"traceparent":"`+metaTraceParent+`"}`), nil)
+
+	assert.Equal(t, metaTraceParent, rec.only(t).TraceParent)
+	require.NotNil(t, downstream)
+	assert.Equal(t, metaTraceParent, downstream.Get(mcp.HeaderTraceParent), "forwarded downstream as a header")
+}
+
+func TestAudit_TraceParentHeaderWinsOverMeta(t *testing.T) {
+	rec := &auditRecorder{}
+	server := mcp.NewServer("s", "1", echoTool()).WithAuditSink(rec.sink)
+	serve(t, server, callWithMeta("echo", `{"traceparent":"`+metaTraceParent+`"}`),
+		map[string]string{mcp.HeaderTraceParent: "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"})
+
+	assert.Equal(t, "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01", rec.only(t).TraceParent)
+}
+
+func TestAudit_NonStringMetaTraceParentIgnored(t *testing.T) {
+	rec := &auditRecorder{}
+	server := mcp.NewServer("s", "1", echoTool()).WithAuditSink(rec.sink)
+	serve(t, server, callWithMeta("echo", `{"traceparent":42}`), nil)
+
+	assert.Empty(t, rec.only(t).TraceParent)
+}
+
+func TestAudit_RejectedCallKeepsMetaTraceParent(t *testing.T) {
+	rec := &auditRecorder{}
+	handler := mcp.AuthMiddleware(discardLogger(), invalidJWKS(),
+		mcp.NewServer("s", "1", echoTool()).WithAuditSink(rec.sink))
+	serve(t, handler, callWithMeta("echo", `{"traceparent":"`+metaTraceParent+`"}`), nil)
+
+	e := rec.only(t)
+	assert.Equal(t, mcp.OutcomeUnauthenticated, e.Outcome)
+	assert.Equal(t, metaTraceParent, e.TraceParent)
+}

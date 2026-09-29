@@ -978,7 +978,10 @@ which workflow, and what came of it:
 
 Correlation: callers such as an agent send `X-Correlation-Id` (the whole
 workflow, e.g. a chat), `X-Turn-Id` (one step, e.g. a prompt) and W3C
-`traceparent`. They are copied into the audit event, available to handlers
+`traceparent`. MCP clients that propagate OpenTelemetry context the MCP way
+(e.g. Strands' `MCPClient`) send `traceparent` per call in the tools/call
+`params._meta` instead of a header; that is used when no header is present.
+They are copied into the audit event, available to handlers
 via `mcp.CorrelationFromContext(ctx)`, and forwarded by
 `mcp.NewHTTPClient(ctx, base)` on downstream calls, so the next service can
 log the same ids. Values are capped at 128 characters.

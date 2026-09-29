@@ -23,7 +23,8 @@ const (
 	HeaderCorrelationID = "X-Correlation-Id"
 	// HeaderTurnID identifies one step of it, e.g. a single user prompt.
 	HeaderTurnID = "X-Turn-Id"
-	// HeaderTraceParent is the W3C Trace Context header.
+	// HeaderTraceParent is the W3C Trace Context header. When absent, a
+	// tools/call's params._meta.traceparent is used instead.
 	HeaderTraceParent = "traceparent"
 )
 
@@ -79,6 +80,26 @@ func correlationFromRequest(r *http.Request) Correlation {
 		TurnID:      clip(r.Header.Get(HeaderTurnID), maxCorrelationLen),
 		TraceParent: clip(r.Header.Get(HeaderTraceParent), maxCorrelationLen),
 	}
+}
+
+// withMetaTraceParent fills in TraceParent from a tools/call request's
+// params._meta when the caller sent no traceparent header. MCP clients that
+// propagate OpenTelemetry context the MCP way (e.g. Strands' MCPClient) put it
+// there, per call, rather than in an HTTP header.
+func withMetaTraceParent(ctx context.Context, meta map[string]any) context.Context {
+	c := CorrelationFromContext(ctx)
+	if c.TraceParent != "" {
+		return ctx
+	}
+
+	tp, ok := meta[HeaderTraceParent].(string)
+	if !ok || tp == "" {
+		return ctx
+	}
+
+	c.TraceParent = clip(tp, maxCorrelationLen)
+
+	return context.WithValue(ctx, correlationKey, c)
 }
 
 func withCorrelation(ctx context.Context, r *http.Request) context.Context {
