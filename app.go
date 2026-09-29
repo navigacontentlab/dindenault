@@ -269,11 +269,55 @@ func (a *App) processRequest(_ context.Context, req *http.Request, path string) 
 		}
 	}
 
-	return &lambda.Response{
-		StatusCode: http.StatusNotFound,
-		Body:       "Not found",
-	}, nil
+	return textResponse(http.StatusNotFound, notFoundBody), nil
 }
+
+// serve converts a Lambda request, dispatches it and always returns a
+// response; failures are logged and answered with a generic 500.
+func (a *App) serve(ctx context.Context, request lambda.Request) *lambda.Response {
+	req, err := lambda.AWSRequestToHTTPRequest(ctx, request)
+	if err != nil {
+		a.logger.Error("Failed to create HTTP request", "error", err)
+
+		return textResponse(http.StatusInternalServerError, internalServerErrorBody)
+	}
+
+	resp, err := a.processRequest(ctx, req, request.Path)
+	if err != nil {
+		a.logger.Error("Failed to process request", "error", err)
+
+		return textResponse(http.StatusInternalServerError, internalServerErrorBody)
+	}
+
+	return resp
+}
+
+// textResponse builds a plain-text response that dindenault answers itself.
+// It carries headers like a handler's response would: an ALB target group
+// with multi-value headers enabled rejects a response without
+// multiValueHeaders and returns 502 to the client instead.
+func textResponse(status int, body string) *lambda.Response {
+	headers := map[string][]string{
+		"Content-Type":           {"text/plain; charset=utf-8"},
+		"X-Content-Type-Options": {"nosniff"},
+	}
+
+	single := make(map[string]string, len(headers))
+	for k, v := range headers {
+		single[k] = v[0]
+	}
+
+	return &lambda.Response{
+		StatusCode:        status,
+		Headers:           single,
+		MultiValueHeaders: headers,
+		Body:              body,
+		Cookies:           []string{},
+	}
+}
+
+// notFoundBody is the body returned when no registered path matches.
+const notFoundBody = "Not found"
 
 // internalServerErrorBody is the generic body returned for unexpected
 // failures. Internal error details are logged, never returned to clients.
@@ -302,27 +346,7 @@ func (a *App) Handle() func(context.Context, events.ALBTargetGroupRequest) (even
 
 	return func(ctx context.Context, event events.ALBTargetGroupRequest) (events.ALBTargetGroupResponse, error) {
 		// Convert to our internal request type
-		request := lambda.FromALBRequest(event)
-
-		req, err := lambda.AWSRequestToHTTPRequest(ctx, request)
-		if err != nil {
-			a.logger.Error("Failed to create HTTP request", "error", err)
-
-			return events.ALBTargetGroupResponse{
-				StatusCode: http.StatusInternalServerError,
-				Body:       internalServerErrorBody,
-			}, nil
-		}
-
-		resp, err := a.processRequest(ctx, req, request.Path)
-		if err != nil {
-			a.logger.Error("Failed to process request", "error", err)
-
-			return events.ALBTargetGroupResponse{
-				StatusCode: http.StatusInternalServerError,
-				Body:       internalServerErrorBody,
-			}, nil
-		}
+		resp := a.serve(ctx, lambda.FromALBRequest(event))
 
 		// Convert to ALB response
 		return events.ALBTargetGroupResponse{
@@ -341,27 +365,7 @@ func (a *App) HandleAPIGateway() func(context.Context, events.APIGatewayV2HTTPRe
 
 	return func(ctx context.Context, event events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 		// Convert to our internal request type
-		request := lambda.FromAPIGatewayRequest(event)
-
-		req, err := lambda.AWSRequestToHTTPRequest(ctx, request)
-		if err != nil {
-			a.logger.Error("Failed to create HTTP request", "error", err)
-
-			return events.APIGatewayV2HTTPResponse{
-				StatusCode: http.StatusInternalServerError,
-				Body:       internalServerErrorBody,
-			}, nil
-		}
-
-		resp, err := a.processRequest(ctx, req, request.Path)
-		if err != nil {
-			a.logger.Error("Failed to process request", "error", err)
-
-			return events.APIGatewayV2HTTPResponse{
-				StatusCode: http.StatusInternalServerError,
-				Body:       internalServerErrorBody,
-			}, nil
-		}
+		resp := a.serve(ctx, lambda.FromAPIGatewayRequest(event))
 
 		// Convert to API Gateway response
 		return events.APIGatewayV2HTTPResponse{

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-29
+
+### Fixed
+- The 404 for unmatched paths and the generic 500 now carry `Content-Type`
+  headers in both `headers` and `multiValueHeaders`. An ALB target group with
+  multi-value headers enabled rejected the header-less response and returned
+  502 to the client.
+
 ## [1.6.0] - 2026-09-29
 
 ### Added
