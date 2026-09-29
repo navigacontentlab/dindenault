@@ -15,6 +15,17 @@ type AuthOption func(*authConfig)
 
 type authConfig struct {
 	publicTools map[string]struct{}
+	audit       AuditSink
+}
+
+// WithAuthAuditSink sets where AuthMiddleware sends the audit event for a
+// tools/call it rejects as unauthenticated. By default it uses the wrapped
+// *Server's sink (see Server.WithAuditSink), or DefaultAuditSink when the
+// wrapped handler is not a *Server.
+func WithAuthAuditSink(sink AuditSink) AuthOption {
+	return func(c *authConfig) {
+		c.audit = sink
+	}
 }
 
 // WithPublicTools marks the named tools as exempt from authentication.
@@ -94,7 +105,7 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 			next.ServeHTTP(w, r)
 
 			return
-		case "tools/call":
+		case methodToolsCall:
 			if _, ok := cfg.publicTools[peek.Params.Name]; ok {
 				next.ServeHTTP(w, r)
 
@@ -102,10 +113,20 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 			}
 		}
 
+		// A rejected tools/call never reaches the server, so it is audited
+		// here — failed calls are what a security team alerts on.
+		rejectCall := func(reason string) {
+			if peek.Method == methodToolsCall {
+				auditRejected(r, cfg, next, peek.Params.Name, reason)
+			}
+
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		}
+
 		token, err := navigaid.GetAuthToken(r.Header)
 		if err != nil {
 			logger.Debug("mcp: missing authorization token", "error", err)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			rejectCall("missing token")
 
 			return
 		}
@@ -113,7 +134,7 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 		claims, err := jwks.Validate(token)
 		if err != nil {
 			logger.Debug("mcp: invalid token", "error", err)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			rejectCall("invalid token")
 
 			return
 		}
@@ -125,4 +146,25 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func auditRejected(r *http.Request, cfg *authConfig, next http.Handler, tool, reason string) {
+	sink, name := cfg.audit, ""
+
+	if srv, ok := next.(*Server); ok {
+		name = srv.name
+		if sink == nil {
+			sink = srv.audit
+		}
+	}
+
+	if sink == nil {
+		sink = DefaultAuditSink
+	}
+
+	ctx := withCorrelation(r.Context(), r)
+	event := newAuditEvent(ctx, auditServiceName(name), tool)
+	event.Outcome = OutcomeUnauthenticated
+	event.Error = reason
+	sink(ctx, event)
 }

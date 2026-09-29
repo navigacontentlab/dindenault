@@ -9,21 +9,33 @@ import "net/http"
 // to token on every request, cloning the request first so the original is
 // never mutated. If base is nil, http.DefaultTransport is used.
 func NewTransport(token string, base http.RoundTripper) http.RoundTripper {
+	return NewTransportWithHeaders(token, nil, base)
+}
+
+// NewTransportWithHeaders is NewTransport that also sets each of extra on
+// every request (e.g. correlation headers), overriding any value the request
+// already carries.
+func NewTransportWithHeaders(token string, extra http.Header, base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
 
-	return &forwardingTransport{base: base, token: token}
+	return &forwardingTransport{base: base, token: token, extra: extra}
 }
 
 type forwardingTransport struct {
 	base  http.RoundTripper
 	token string
+	extra http.Header
 }
 
 func (t *forwardingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set("Authorization", t.token)
+
+	for name, values := range t.extra {
+		r.Header[name] = values
+	}
 
 	return t.base.RoundTrip(r) //nolint:wrapcheck // RoundTrip errors must not be wrapped; callers inspect the concrete type (e.g. *url.Error)
 }

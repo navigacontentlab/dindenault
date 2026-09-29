@@ -39,6 +39,16 @@
 //	    token := mcp.AuthorizationFromContext(ctx) // e.g. "Bearer eyJ..."
 //	    // ...
 //	}
+//
+// # Audit and correlation
+//
+// Every tools/call writes one AuditEvent (see audit.go) — caller org and
+// subject, tool, outcome, duration and the X-Correlation-Id / X-Turn-Id /
+// traceparent headers the caller sent — to DefaultAuditSink (JSON lines on
+// stdout). Arguments and results are fingerprinted, never recorded. Use
+// Server.WithAuditSink to send events elsewhere, or DisableAudit to turn it
+// off. Tool handlers read the correlation values with CorrelationFromContext;
+// NewHTTPClient forwards them downstream.
 package mcp
 
 import (
@@ -46,6 +56,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
@@ -56,6 +67,9 @@ type contextKey int
 const (
 	authorizationKey contextKey = iota
 )
+
+// methodToolsCall is the JSON-RPC method that invokes a tool.
+const methodToolsCall = "tools/call"
 
 // mcpProtocolVersion is the MCP spec version this server targets.
 const mcpProtocolVersion = "2025-03-26"
@@ -172,6 +186,7 @@ type Server struct {
 	version string
 	tools   []Tool
 	toolMap map[string]*Tool
+	audit   AuditSink
 }
 
 // NewServer creates an MCP server with the given identity and tools.
@@ -182,11 +197,26 @@ func NewServer(name, version string, tools ...Tool) *Server {
 		version: version,
 		tools:   tools,
 		toolMap: make(map[string]*Tool, len(tools)),
+		audit:   DefaultAuditSink,
 	}
 
 	for i := range tools {
 		s.toolMap[tools[i].Name] = &s.tools[i]
 	}
+
+	return s
+}
+
+// WithAuditSink replaces the sink that receives one AuditEvent per tools/call
+// (DefaultAuditSink unless set). Pass DisableAudit to turn auditing off; nil
+// restores the default. It returns s for chaining and must be called before
+// the server starts handling requests.
+func (s *Server) WithAuditSink(sink AuditSink) *Server {
+	if sink == nil {
+		sink = DefaultAuditSink
+	}
+
+	s.audit = sink
 
 	return s
 }
@@ -206,8 +236,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Propagate Authorization header into context for tool handlers.
-	ctx := r.Context()
+	// Propagate Authorization and correlation headers into context for tool
+	// handlers.
+	ctx := withCorrelation(r.Context(), r)
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		ctx = context.WithValue(ctx, authorizationKey, auth)
 	}
@@ -220,7 +251,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	case "tools/list":
 		s.handleToolsList(w, &req)
-	case "tools/call":
+	case methodToolsCall:
 		s.handleToolsCall(ctx, w, &req)
 	default:
 		writeError(w, req.ID, codeMethodNotFound, "Method not found: "+req.Method)
@@ -261,15 +292,24 @@ func (s *Server) handleToolsList(w http.ResponseWriter, req *jsonRPCRequest) {
 }
 
 func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req *jsonRPCRequest) {
+	start := time.Now()
+
 	var params toolsCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
+		s.emitAudit(ctx, start, nil, params.Name, nil, 0, OutcomeInvalidParams, err.Error())
 		writeError(w, req.ID, codeInvalidParams, "Invalid params: "+err.Error())
 
 		return
 	}
 
+	args := params.Arguments
+	if len(args) == 0 {
+		args = json.RawMessage("{}")
+	}
+
 	tool, ok := s.toolMap[params.Name]
 	if !ok {
+		s.emitAudit(ctx, start, nil, params.Name, args, 0, OutcomeUnknownTool, "")
 		writeError(w, req.ID, codeInvalidParams, fmt.Sprintf("Unknown tool: %q", params.Name))
 
 		return
@@ -278,6 +318,7 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 	if len(tool.RequiredPermissions) > 0 {
 		authInfo, err := navigaid.GetAuth(ctx)
 		if err != nil {
+			s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeUnauthenticated, "no validated auth")
 			writeError(w, req.ID, codePermissionDenied,
 				fmt.Sprintf("Tool %q requires authentication", params.Name))
 
@@ -285,6 +326,8 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		}
 
 		if !authInfo.Claims.HasPermissionsInOrganisation(tool.RequiredPermissions...) {
+			s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeDenied,
+				fmt.Sprintf("missing permissions: %v", tool.RequiredPermissions))
 			writeError(w, req.ID, codePermissionDenied,
 				fmt.Sprintf("Tool %q requires permissions: %v", params.Name, tool.RequiredPermissions))
 
@@ -292,13 +335,9 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		}
 	}
 
-	args := params.Arguments
-	if len(args) == 0 {
-		args = json.RawMessage("{}")
-	}
-
 	output, err := tool.Handler(ctx, args)
 	if err != nil {
+		s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeToolError, err.Error())
 		// Per MCP spec, tool execution errors are returned as a successful
 		// JSON-RPC response with isError=true in the result.
 		writeResult(w, req.ID, toolsCallResult{
@@ -309,9 +348,38 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		return
 	}
 
+	s.emitAudit(ctx, start, tool, params.Name, args, len(output), OutcomeOK, "")
 	writeResult(w, req.ID, toolsCallResult{
 		Content: []contentItem{{Type: "text", Text: string(output)}},
 	})
+}
+
+// emitAudit sends one AuditEvent for a tools/call. tool is nil when the call
+// never resolved to a registered tool.
+func (s *Server) emitAudit(
+	ctx context.Context, start time.Time, tool *Tool, name string,
+	args json.RawMessage, resultBytes int, outcome, errText string,
+) {
+	if s.audit == nil {
+		return
+	}
+
+	event := newAuditEvent(ctx, auditServiceName(s.name), name)
+	event.Outcome = outcome
+	event.Error = clip(errText, maxAuditErrorLen)
+	event.DurationMS = time.Since(start).Milliseconds()
+	event.ResultBytes = resultBytes
+
+	if tool != nil && tool.Annotations != nil && tool.Annotations.ReadOnlyHint != nil {
+		event.ReadOnly = *tool.Annotations.ReadOnlyHint
+	}
+
+	if args != nil {
+		event.ArgsSHA256 = fingerprint(args)
+		event.ArgsBytes = len(args)
+	}
+
+	s.audit(ctx, event)
 }
 
 // ── JSON-RPC wire types ────────────────────────────────────────────────────────

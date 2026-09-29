@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-29
+
+### Added
+- MCP audit events: every `tools/call` writes one `mcp_tool_call` JSON line
+  (caller org and subject, tool, `read_only`, outcome, duration, argument
+  fingerprint, correlation ids) to `mcp.DefaultAuditSink` on stdout,
+  independent of the log level. Calls rejected by `AuthMiddleware` are
+  audited as `unauthenticated`. Arguments and results are never recorded.
+  `Server.WithAuditSink`, `mcp.NewJSONAuditSink`, `mcp.DisableAudit` and
+  `mcp.WithAuthAuditSink` configure it.
+- MCP correlation: `X-Correlation-Id`, `X-Turn-Id` and `traceparent` from the
+  incoming request are available via `mcp.CorrelationFromContext` and
+  forwarded by `mcp.NewHTTPClient` on downstream requests.
+
+### Changed
+- MCP servers now write one audit line per tool call to stdout by default.
+  Services that must not, call `WithAuditSink(mcp.DisableAudit)` on a
+  server they build themselves.
+
 ## [1.6.2] - 2026-09-29
 
 ### Fixed

@@ -8,8 +8,10 @@ import (
 )
 
 // NewHTTPClient returns an *http.Client that forwards the MCP caller's
-// Authorization token on every outbound request. The token is read from ctx
-// via AuthorizationFromContext at call time and baked into the transport.
+// Authorization token on every outbound request, together with the request's
+// correlation headers (X-Correlation-Id, X-Turn-Id, traceparent — see
+// CorrelationFromContext) so downstream services can log the same ids. Both
+// are read from ctx at call time and baked into the transport.
 //
 // Pass a shared base RoundTripper — e.g. http.DefaultTransport or a cached
 // *http.Transport — to preserve TCP connection pooling across calls. If base
@@ -21,6 +23,8 @@ import (
 //	client.Timeout = 15 * time.Second
 func NewHTTPClient(ctx context.Context, base http.RoundTripper) *http.Client {
 	return &http.Client{
-		Transport: httpforward.NewTransport(AuthorizationFromContext(ctx), base),
+		Transport: httpforward.NewTransportWithHeaders(
+			AuthorizationFromContext(ctx), CorrelationFromContext(ctx).Header(), base,
+		),
 	}
 }

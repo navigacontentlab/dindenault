@@ -946,7 +946,55 @@ token from validated auth information in the context (set by
 `mcp.AuthMiddleware`, `navigaid.HTTPMiddleware`, or a navigaid Connect
 interceptor) — so it works with any of dindenault's authentication
 entry points. `mcp.NewHTTPClient(ctx, base)` gives you an `http.Client`
-that forwards the token automatically.
+that forwards the token — and the correlation headers — automatically.
+
+### Audit Events and Correlation
+
+Every `tools/call` writes one structured audit event, on by default — no
+code change beyond upgrading. It records who called which tool, as part of
+which workflow, and what came of it:
+
+```json
+{"event":"mcp_tool_call","audit_version":1,"time":"2026-09-30T08:12:03.41Z",
+ "service":"NavigaEditorialMCP-dev","tool":"write_document","read_only":false,
+ "outcome":"ok","org":"acme","sub":"8f3c…","correlation_id":"<chat>",
+ "turn_id":"<prompt>","duration_ms":412,"args_sha256":"9b1f…",
+ "args_bytes":5120,"result_bytes":230}
+```
+
+- `outcome` is `ok`, `tool_error`, `denied` (missing `RequiredPermissions`),
+  `unauthenticated` (rejected by `AuthMiddleware` — audited too, since failed
+  calls are what security teams alert on), `unknown_tool` or `invalid_params`.
+- Tool arguments and results are **never** recorded — they are customer
+  content. `args_sha256` fingerprints the arguments so a call can be matched
+  against a known input.
+- `service` is the `NewServer` name, or `AWS_LAMBDA_FUNCTION_NAME` when the
+  server uses the default name (as `WithMCP`/`WithMCPAuth` do).
+- Events go to `mcp.DefaultAuditSink`: one JSON line on stdout, written
+  **regardless of the service's log level**, so a service at `LOG_LEVEL=warn`
+  still leaves an audit trail. In Lambda that is the function's CloudWatch log
+  group; select them with the filter `{ $.event = "mcp_tool_call" }`.
+- `audit_version` is bumped only when a field changes meaning or is removed.
+
+Correlation: callers such as an agent send `X-Correlation-Id` (the whole
+workflow, e.g. a chat), `X-Turn-Id` (one step, e.g. a prompt) and W3C
+`traceparent`. They are copied into the audit event, available to handlers
+via `mcp.CorrelationFromContext(ctx)`, and forwarded by
+`mcp.NewHTTPClient(ctx, base)` on downstream calls, so the next service can
+log the same ids. Values are capped at 128 characters.
+
+To send events elsewhere or turn auditing off, build the server yourself:
+
+```go
+server := mcp.NewServer("my-service", "2.1.0", tools...).
+    WithAuditSink(mySink)           // or mcp.DisableAudit
+app := dindenault.New(logger,
+    dindenault.WithService("/mcp", mcp.AuthMiddleware(logger, jwks, server)),
+)
+```
+
+`AuthMiddleware` uses the wrapped server's sink for the calls it rejects
+(override with `mcp.WithAuthAuditSink`).
 
 ### Tool Errors
 
