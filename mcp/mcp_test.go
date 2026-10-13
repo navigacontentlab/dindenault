@@ -121,6 +121,51 @@ func TestInitialize(t *testing.T) {
 	assert.NotNil(t, caps["tools"])
 }
 
+func initializeServerInfo(t *testing.T, server *mcp.Server) map[string]any {
+	t.Helper()
+
+	rr := post(t, server, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	result, ok := decodeResponse(t, rr.Body)["result"].(map[string]any)
+	require.True(t, ok, "expected result object")
+
+	info, ok := result["serverInfo"].(map[string]any)
+	require.True(t, ok)
+
+	return info
+}
+
+func TestInitialize_OptionalServerInfoFieldsAreOmittedWhenUnset(t *testing.T) {
+	info := initializeServerInfo(t, mcp.NewServer("test-server", "0.1.0", echoTool()))
+
+	assert.Equal(t, map[string]any{"name": "test-server", "version": "0.1.0"}, info)
+}
+
+func TestServerWithInfo(t *testing.T) {
+	server := mcp.NewServer("dindenault", "1.0.0", echoTool()).WithInfo(mcp.ServerInfo{
+		Name:        "my-service",
+		Version:     "2.1.0",
+		Title:       "My Service",
+		Description: "Search and edit my content",
+	})
+
+	assert.Equal(t, map[string]any{
+		"name":        "my-service",
+		"version":     "2.1.0",
+		"title":       "My Service",
+		"description": "Search and edit my content",
+	}, initializeServerInfo(t, server))
+}
+
+func TestServerWithInfo_EmptyFieldsKeepWhatNewServerSet(t *testing.T) {
+	server := mcp.NewServer("my-service", "2.1.0", echoTool()).WithInfo(mcp.ServerInfo{Description: "only this"})
+
+	assert.Equal(t, map[string]any{
+		"name":        "my-service",
+		"version":     "2.1.0",
+		"description": "only this",
+	}, initializeServerInfo(t, server))
+}
+
 func TestToolsList(t *testing.T) {
 	server := mcp.NewServer("s", "1", echoTool(), failTool())
 

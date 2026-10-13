@@ -968,8 +968,9 @@ which workflow, and what came of it:
 - Tool arguments and results are **never** recorded — they are customer
   content. `args_sha256` fingerprints the arguments so a call can be matched
   against a known input.
-- `service` is the `NewServer` name, or `AWS_LAMBDA_FUNCTION_NAME` when the
-  server uses the default name (as `WithMCP`/`WithMCPAuth` do).
+- `service` is the `NewServer` name (or the `Name` from `WithMCPServerInfo`),
+  or `AWS_LAMBDA_FUNCTION_NAME` when the server uses the default name (as
+  `WithMCP`/`WithMCPAuth` do).
 - Events go to `mcp.DefaultAuditSink`: one JSON line on stdout, written
   **regardless of the service's log level**, so a service at `LOG_LEVEL=warn`
   still leaves an audit trail. In Lambda that is the function's CloudWatch log
@@ -1005,7 +1006,22 @@ When a handler returns an error, the MCP server returns a successful JSON-RPC re
 
 ### Custom Server Name and Version
 
-`WithMCP` uses `"dindenault"` as the server name by default. For full control, register the server manually:
+`WithMCP` and `WithMCPAuth` report the name `"dindenault"` and version `"1.0.0"` by default. That is what MCP clients and registries (for example AWS Agent Registry) show for your service, so set your own with `WithMCPServerInfo`. It works before or after `WithMCP`/`WithMCPAuth`, only non-empty fields are applied, and `Description` and `Title` are sent only when set:
+
+```go
+app := dindenault.New(logger,
+    dindenault.WithMCPServerInfo(mcp.ServerInfo{
+        Name:        "my-service",
+        Version:     version, // e.g. injected with -ldflags
+        Description: "Search and edit my content",
+    }),
+    dindenault.WithMCPAuth("/mcp", logger, imasURL, nil, tools...),
+)
+```
+
+A custom `Name` also becomes the audit event's `service` field, replacing the Lambda function name that is used with the default name. `title` and `description` in `serverInfo` come from newer MCP spec revisions than the `2025-03-26` this server reports; clients ignore fields they do not know.
+
+For full control, register the server manually:
 
 ```go
 server := mcp.NewServer("my-service", "2.1.0", tools...)

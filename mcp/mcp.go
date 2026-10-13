@@ -184,9 +184,26 @@ func ReadOnly() *ToolAnnotations {
 type Server struct {
 	name    string
 	version string
-	tools   []Tool
-	toolMap map[string]*Tool
-	audit   AuditSink
+	// title and description are optional; they are only sent when set.
+	title       string
+	description string
+	tools       []Tool
+	toolMap     map[string]*Tool
+	audit       AuditSink
+}
+
+// ServerInfo identifies the server to clients in the initialize response
+// (serverInfo). Registries and MCP clients show it to people.
+type ServerInfo struct {
+	// Name is the machine-readable server name, e.g. "naviga-editorial-mcp".
+	// It also becomes the "service" field of audit events.
+	Name string
+	// Version is the server's own version, e.g. its release tag.
+	Version string
+	// Title is an optional human-readable name.
+	Title string
+	// Description is an optional one-line summary of what the server does.
+	Description string
 }
 
 // NewServer creates an MCP server with the given identity and tools.
@@ -202,6 +219,30 @@ func NewServer(name, version string, tools ...Tool) *Server {
 
 	for i := range tools {
 		s.toolMap[tools[i].Name] = &s.tools[i]
+	}
+
+	return s
+}
+
+// WithInfo overrides how the server identifies itself in the initialize
+// response. Only non-empty fields are applied, so the name and version given to
+// NewServer stay unless replaced. It returns s for chaining and must be called
+// before the server starts handling requests.
+func (s *Server) WithInfo(info ServerInfo) *Server {
+	if info.Name != "" {
+		s.name = info.Name
+	}
+
+	if info.Version != "" {
+		s.version = info.Version
+	}
+
+	if info.Title != "" {
+		s.title = info.Title
+	}
+
+	if info.Description != "" {
+		s.description = info.Description
 	}
 
 	return s
@@ -265,8 +306,10 @@ func (s *Server) handleInitialize(w http.ResponseWriter, req *jsonRPCRequest) {
 			Tools: &toolsCapability{},
 		},
 		ServerInfo: serverInfo{
-			Name:    s.name,
-			Version: s.version,
+			Name:        s.name,
+			Version:     s.version,
+			Title:       s.title,
+			Description: s.description,
 		},
 	})
 }
@@ -417,9 +460,15 @@ type serverCapabilities struct {
 
 type toolsCapability struct{}
 
+// serverInfo is the MCP Implementation object. title and description are
+// later additions to the MCP spec than the 2025-03-26 version this server
+// reports; clients ignore fields they do not know, and they are omitted
+// unless set.
 type serverInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name        string `json:"name"`
+	Title       string `json:"title,omitempty"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
 }
 
 type toolDefinition struct {

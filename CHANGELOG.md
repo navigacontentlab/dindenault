@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-13
+
+### Added
+- `WithMCPServerInfo(mcp.ServerInfo{Name, Version, Title, Description})`
+  sets what the servers mounted by `WithMCP`/`WithMCPAuth` report in the
+  `initialize` response. They were fixed at name `"dindenault"`, version
+  `"1.0.0"`, so every service looked the same in MCP registries and clients.
+  Order-independent; only non-empty fields apply; without it nothing changes.
+- `mcp.ServerInfo` and `(*mcp.Server).WithInfo` for servers built with
+  `mcp.NewServer`. `title` and `description` are added to `serverInfo` and
+  omitted unless set.
+
+### Changed
+- A custom server name (via `WithMCPServerInfo` or `WithInfo`) becomes the
+  `service` of `mcp_tool_call` audit events instead of the Lambda function
+  name. Servers that keep the default name are unaffected.
+
 ## [1.7.1] - 2026-09-29
 
 ### Fixed
@@ -199,5 +216,6 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.0
 [1.0.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.0.0

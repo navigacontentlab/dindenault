@@ -48,6 +48,7 @@ import (
 func WithMCP(path string, tools ...mcp.Tool) Option {
 	return func(a *App) {
 		server := mcp.NewServer("dindenault", "1.0.0", tools...)
+		a.mcpServers = append(a.mcpServers, server)
 
 		a.registrations = append(a.registrations, Registration{
 			Path:    path,
@@ -86,6 +87,7 @@ func WithMCPAuth(path string, logger *slog.Logger, imasURL string, authOpts []mc
 
 	return func(a *App) {
 		server := mcp.NewServer("dindenault", "1.0.0", tools...)
+		a.mcpServers = append(a.mcpServers, server)
 		jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL))
 		handler := mcp.AuthMiddleware(logger, jwks, server, authOpts...)
 
@@ -96,5 +98,28 @@ func WithMCPAuth(path string, logger *slog.Logger, imasURL string, authOpts []mc
 			// cannot be applied to them.
 			SkipGlobalInterceptors: true,
 		})
+	}
+}
+
+// WithMCPServerInfo sets how the MCP servers mounted by WithMCP and WithMCPAuth
+// identify themselves in the initialize response — the name, version and
+// description that registries and MCP clients show. Without it they report
+// the name "dindenault" and version "1.0.0".
+//
+// Only non-empty fields are applied, and the option may appear before or after
+// WithMCP/WithMCPAuth. A custom Name also replaces the Lambda function name
+// that audit events otherwise use as their "service" field.
+//
+//	app := dindenault.New(logger,
+//	    dindenault.WithMCPServerInfo(mcp.ServerInfo{
+//	        Name:        "my-service",
+//	        Version:     "2.1.0",
+//	        Description: "Search and edit my content",
+//	    }),
+//	    dindenault.WithMCPAuth("/mcp", logger, imasURL, nil, tools...),
+//	)
+func WithMCPServerInfo(info mcp.ServerInfo) Option {
+	return func(a *App) {
+		a.mcpInfo = info
 	}
 }

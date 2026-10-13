@@ -107,6 +107,7 @@ import (
 
 	"github.com/navigacontentlab/dindenault/cors"
 	"github.com/navigacontentlab/dindenault/internal/lambda"
+	"github.com/navigacontentlab/dindenault/mcp"
 )
 
 // App handles Connect services in Lambda.
@@ -118,6 +119,11 @@ type App struct {
 	telemetryOptions   TelemetryOptions
 	corsOptions        *cors.Options
 	prepareOnce        sync.Once
+
+	// mcpInfo is applied to every server in mcpServers once all options have
+	// run, so WithMCPServerInfo works regardless of option order.
+	mcpInfo    mcp.ServerInfo
+	mcpServers []*mcp.Server
 }
 
 // GlobalInterceptors returns the list of global interceptors for testing.
@@ -156,6 +162,10 @@ func New(logger *slog.Logger, options ...Option) *App {
 	// Apply options
 	for _, opt := range options {
 		opt(app)
+	}
+
+	for _, server := range app.mcpServers {
+		server.WithInfo(app.mcpInfo)
 	}
 
 	return app

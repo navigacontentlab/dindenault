@@ -207,6 +207,18 @@ func TestAudit_ServiceNameFallsBackToLambdaFunction(t *testing.T) {
 	assert.Equal(t, "NavigaEditorialMCP-dev", rec.only(t).Service)
 }
 
+func TestAudit_CustomServerInfoNameIsTheService(t *testing.T) {
+	t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "NavigaEditorialMCP-dev")
+
+	rec := &auditRecorder{}
+	server := mcp.NewServer("dindenault", "1.0.0", echoTool()).
+		WithInfo(mcp.ServerInfo{Name: "naviga-editorial-mcp"}).
+		WithAuditSink(rec.sink)
+	serve(t, server, callBody("echo", `{}`), nil)
+
+	assert.Equal(t, "naviga-editorial-mcp", rec.only(t).Service)
+}
+
 func TestAudit_LongCorrelationValuesAreClipped(t *testing.T) {
 	rec := &auditRecorder{}
 	server := mcp.NewServer("s", "1", echoTool()).WithAuditSink(rec.sink)
