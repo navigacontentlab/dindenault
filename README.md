@@ -1004,6 +1004,14 @@ app := dindenault.New(logger,
 
 When a handler returns an error, the MCP server returns a successful JSON-RPC response with `isError: true` in the result (per MCP spec). This lets the AI model observe the error and decide how to proceed, rather than treating it as a protocol-level failure.
 
+### Protocol Version Negotiation
+
+`initialize` negotiates the MCP protocol version as the spec's lifecycle describes. The server speaks `2025-11-25`, `2025-06-18` and `2025-03-26`, and answers with the version the client asks for when it is one of those. For anything else it answers with the newest supported version that is not newer than the request: a client from the future gets `2025-11-25`, one in between gets the older neighbour. A client older than all three (`2024-11-05`), or one that sends no usable version, gets `2025-03-26` — what the server always answered before it negotiated.
+
+This matters for registries and other clients that read `serverInfo` according to the negotiated version: `description` only exists in `2025-11-25`.
+
+What the server does **not** do, and the `2025-06-18`/`2025-11-25` transport specs ask of servers: it does not validate the `Origin` header (spec: respond `403` when present and invalid) and it does not check `MCP-Protocol-Version` on later requests (spec: respond `400` when invalid or unsupported). Neither matters for a server behind Bearer-token authentication that only browsers on your own origins would call, but they are open compliance items.
+
 ### Custom Server Name and Version
 
 `WithMCP` and `WithMCPAuth` report the name `"dindenault"` and version `"1.0.0"` by default. That is what MCP clients and registries (for example AWS Agent Registry) show for your service, so set your own with `WithMCPServerInfo`. It works before or after `WithMCP`/`WithMCPAuth`, only non-empty fields are applied, and `Description` and `Title` are sent only when set:
@@ -1019,7 +1027,7 @@ app := dindenault.New(logger,
 )
 ```
 
-A custom `Name` also becomes the audit event's `service` field, replacing the Lambda function name that is used with the default name. `title` and `description` in `serverInfo` come from newer MCP spec revisions than the `2025-03-26` this server reports; clients ignore fields they do not know.
+A custom `Name` also becomes the audit event's `service` field, replacing the Lambda function name that is used with the default name. `title` (spec `2025-06-18`) and `description` (spec `2025-11-25`) in `serverInfo` are sent whenever set, whatever protocol version was negotiated; clients ignore fields they do not know.
 
 For full control, register the server manually:
 

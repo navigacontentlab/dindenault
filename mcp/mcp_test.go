@@ -121,6 +121,55 @@ func TestInitialize(t *testing.T) {
 	assert.NotNil(t, caps["tools"])
 }
 
+func initializeProtocolVersion(t *testing.T, server *mcp.Server, params string) string {
+	t.Helper()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize"` + params + `}`
+	rr := post(t, server, body)
+
+	result, ok := decodeResponse(t, rr.Body)["result"].(map[string]any)
+	require.True(t, ok, "expected result object")
+
+	version, _ := result["protocolVersion"].(string)
+
+	return version
+}
+
+func TestInitialize_NegotiatesProtocolVersion(t *testing.T) {
+	server := mcp.NewServer("s", "1", echoTool())
+
+	cases := []struct {
+		name      string
+		requested string
+		want      string
+	}{
+		{"newest supported is echoed", "2025-11-25", "2025-11-25"},
+		{"middle supported is echoed", "2025-06-18", "2025-06-18"},
+		{"oldest supported is echoed", "2025-03-26", "2025-03-26"},
+		{"a client from the future gets our newest", "2099-01-01", "2025-11-25"},
+		{"an unknown date between two of ours gets the older one", "2025-08-01", "2025-06-18"},
+		{"older than anything we support gets the default", "2024-11-05", "2025-03-26"},
+		{"not a date gets the default", "1.0.0", "2025-03-26"},
+		{"empty gets the default", "", "2025-03-26"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			params := `,"params":{"protocolVersion":"` + c.requested + `"}`
+			assert.Equal(t, c.want, initializeProtocolVersion(t, server, params))
+		})
+	}
+}
+
+func TestInitialize_WithoutUsableParamsKeepsTheLegacyVersion(t *testing.T) {
+	server := mcp.NewServer("s", "1", echoTool())
+
+	assert.Equal(t, "2025-03-26", initializeProtocolVersion(t, server, ""), "no params at all")
+	assert.Equal(t, "2025-03-26", initializeProtocolVersion(t, server, `,"params":{}`))
+	assert.Equal(t, "2025-03-26", initializeProtocolVersion(t, server, `,"params":"not an object"`))
+	assert.Equal(t, "2025-03-26", initializeProtocolVersion(t, server, `,"params":{"protocolVersion":42}`))
+}
+
 func initializeServerInfo(t *testing.T, server *mcp.Server) map[string]any {
 	t.Helper()
 

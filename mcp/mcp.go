@@ -56,6 +56,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/navigacontentlab/dindenault/navigaid"
@@ -71,8 +72,47 @@ const (
 // methodToolsCall is the JSON-RPC method that invokes a tool.
 const methodToolsCall = "tools/call"
 
-// mcpProtocolVersion is the MCP spec version this server targets.
-const mcpProtocolVersion = "2025-03-26"
+// supportedProtocolVersions lists the MCP spec versions this server speaks,
+// newest first. initialize answers with the one the client asks for when it is
+// in this list (see negotiateProtocolVersion). The server is stateless and
+// exposes tools only, so the differences between these versions that matter
+// here are limited to what initialize returns.
+var supportedProtocolVersions = []string{"2025-11-25", "2025-06-18", "2025-03-26"} //nolint:gochecknoglobals // fixed table
+
+// defaultProtocolVersion is what initialize answers when the client names no
+// usable version. It is the version this server always answered before it
+// negotiated, and the oldest one it supports.
+const defaultProtocolVersion = "2025-03-26"
+
+var protocolVersionRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// negotiateProtocolVersion picks the protocol version for an initialize
+// request, following the MCP lifecycle rule: a requested version the server
+// supports is echoed; otherwise the server answers with another version it
+// supports.
+//
+// For a requested date that is not supported, that is the newest supported
+// version that is not newer than the request: a client from the future gets our
+// newest, a client between two of ours gets the older of them. A client older
+// than everything we support, or one that sent nothing usable, gets
+// defaultProtocolVersion — the same answer it got before negotiation existed.
+func negotiateProtocolVersion(requested string) string {
+	for _, v := range supportedProtocolVersions {
+		if v == requested {
+			return v
+		}
+	}
+
+	if protocolVersionRe.MatchString(requested) {
+		for _, v := range supportedProtocolVersions {
+			if v <= requested { // ISO dates compare correctly as strings
+				return v
+			}
+		}
+	}
+
+	return defaultProtocolVersion
+}
 
 // JSON-RPC 2.0 error codes.
 const (
@@ -300,8 +340,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInitialize(w http.ResponseWriter, req *jsonRPCRequest) {
+	// A client that sends no params, or malformed ones, simply gets the default.
+	var params struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+
+	_ = json.Unmarshal(req.Params, &params)
+
 	writeResult(w, req.ID, initializeResult{
-		ProtocolVersion: mcpProtocolVersion,
+		ProtocolVersion: negotiateProtocolVersion(params.ProtocolVersion),
 		Capabilities: serverCapabilities{
 			Tools: &toolsCapability{},
 		},
@@ -460,10 +507,10 @@ type serverCapabilities struct {
 
 type toolsCapability struct{}
 
-// serverInfo is the MCP Implementation object. title and description are
-// later additions to the MCP spec than the 2025-03-26 version this server
-// reports; clients ignore fields they do not know, and they are omitted
-// unless set.
+// serverInfo is the MCP Implementation object. title arrived in the
+// 2025-06-18 spec and description in 2025-11-25 (to match the MCP registry's
+// server.json); they are sent whenever set, whatever version was negotiated,
+// and clients ignore fields they do not know. Omitted unless set.
 type serverInfo struct {
 	Name        string `json:"name"`
 	Title       string `json:"title,omitempty"`
