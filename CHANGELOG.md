@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-10-15
+
+### Added
+- "Any of" permission checks (OR) alongside the existing "all of" lists:
+  `PathPermissionConfig.AnyPermissions` (for `PathInterceptors` and
+  `WithPathPermissionService`) and `mcp.Tool.AnyPermissions` require at least
+  one of the listed organization-level permissions. When combined with
+  `Permissions`/`RequiredPermissions`, both conditions must hold.
+- `dindenault.HasAnyPermission`, `dindenault.AuthorizeWithAnyPermission`, and
+  `navigaid.Claims.HasAnyPermissionInOrganisation`/`HasAnyPermissionInUnit`.
+  Unit-scoped grants still do not satisfy organization-level checks.
+
 ## [1.8.1] - 2026-10-13
 
 ### Changed
@@ -229,7 +241,8 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.8.2...HEAD
+[1.8.2]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.2
 [1.8.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.1
 [1.8.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.0
 [1.0.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.0.0

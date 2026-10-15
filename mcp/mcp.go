@@ -180,6 +180,12 @@ type Tool struct {
 	// Leave empty to handle authorization in the Handler itself.
 	RequiredPermissions []string
 
+	// AnyPermissions lists organization-level permissions of which the
+	// caller must hold at least one (OR). It is checked in addition to
+	// RequiredPermissions and, like it, rejects calls without validated
+	// auth information. Leave empty to skip the check.
+	AnyPermissions []string
+
 	// Annotations are optional hints about the tool's behavior, sent in
 	// tools/list. Clients use them for UX decisions, e.g. skipping the
 	// confirmation prompt for read-only tools. They are hints, not a
@@ -407,7 +413,7 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		return
 	}
 
-	if len(tool.RequiredPermissions) > 0 {
+	if len(tool.RequiredPermissions) > 0 || len(tool.AnyPermissions) > 0 {
 		authInfo, err := navigaid.GetAuth(ctx)
 		if err != nil {
 			s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeUnauthenticated, "no validated auth")
@@ -422,6 +428,15 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 				fmt.Sprintf("missing permissions: %v", tool.RequiredPermissions))
 			writeError(w, req.ID, codePermissionDenied,
 				fmt.Sprintf("Tool %q requires permissions: %v", params.Name, tool.RequiredPermissions))
+
+			return
+		}
+
+		if len(tool.AnyPermissions) > 0 && !authInfo.Claims.HasAnyPermissionInOrganisation(tool.AnyPermissions...) {
+			s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeDenied,
+				fmt.Sprintf("missing any of permissions: %v", tool.AnyPermissions))
+			writeError(w, req.ID, codePermissionDenied,
+				fmt.Sprintf("Tool %q requires one of permissions: %v", params.Name, tool.AnyPermissions))
 
 			return
 		}

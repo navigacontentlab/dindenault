@@ -50,6 +50,36 @@ func (c Claims) HasPermissionsInOrganisation(permissions ...string) bool {
 	return true
 }
 
+// HasAnyPermissionInUnit checks if the holder has at least one of the
+// given permissions in a unit, either directly, or inherited from the
+// organisation. It returns false when no permissions are given.
+func (c Claims) HasAnyPermissionInUnit(unit string, permissions ...string) bool {
+	perms := c.Permissions.PermissionsInUnit(unit)
+
+	for _, p := range permissions {
+		if perms[p] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// HasAnyPermissionInOrganisation checks if the holder has at least one
+// of the given permissions in the organisation. It returns false when
+// no permissions are given.
+func (c Claims) HasAnyPermissionInOrganisation(permissions ...string) bool {
+	perms := c.Permissions.PermissionsInOrganisation()
+
+	for _, p := range permissions {
+		if perms[p] {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Userinfo contains name and similar data.
 type Userinfo struct {
 	GivenName  string `json:"given_name"`

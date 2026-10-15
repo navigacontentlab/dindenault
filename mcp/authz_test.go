@@ -23,6 +23,14 @@ func permTestServer() *mcp.Server {
 			},
 		},
 		mcp.Tool{
+			Name:           "any_tool",
+			Description:    "requires content:read or content:admin",
+			AnyPermissions: []string{"content:read", "content:admin"},
+			Handler: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+				return json.RawMessage(`"any ok"`), nil
+			},
+		},
+		mcp.Tool{
 			Name:        "open_tool",
 			Description: "no permission requirement",
 			Handler: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
@@ -93,6 +101,33 @@ func TestRequiredPermissions(t *testing.T) {
 		resp := callTool(context.Background(), t, server, "open_tool")
 		if resp["error"] != nil {
 			t.Fatalf("expected success, got error: %v", resp["error"])
+		}
+	})
+}
+
+func TestAnyPermissions(t *testing.T) {
+	server := permTestServer()
+
+	for _, perm := range []string{"content:read", "content:admin"} {
+		t.Run("allowed with "+perm, func(t *testing.T) {
+			resp := callTool(authContext([]string{perm}), t, server, "any_tool")
+			if resp["error"] != nil {
+				t.Fatalf("expected success, got error: %v", resp["error"])
+			}
+		})
+	}
+
+	t.Run("denied with none of them", func(t *testing.T) {
+		resp := callTool(authContext([]string{"content:write"}), t, server, "any_tool")
+		if resp["error"] == nil {
+			t.Fatal("expected permission denied error")
+		}
+	})
+
+	t.Run("denied without auth in context", func(t *testing.T) {
+		resp := callTool(context.Background(), t, server, "any_tool")
+		if resp["error"] == nil {
+			t.Fatal("a tool with AnyPermissions must reject unauthenticated calls")
 		}
 	})
 }

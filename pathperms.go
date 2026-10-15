@@ -22,8 +22,30 @@ import (
 type PathPermissionConfig struct {
 	// PathPrefix is the prefix of the request path
 	PathPrefix string
-	// Permissions are the organization-level permissions required
+	// Permissions are organization-level permissions that are all
+	// required (AND).
 	Permissions []string
+	// AnyPermissions are organization-level permissions of which at
+	// least one is required (OR). When both Permissions and
+	// AnyPermissions are set, both conditions must hold. Leave empty to
+	// skip the check.
+	AnyPermissions []string
+}
+
+// missingPermission returns a description of the first unmet
+// permission requirement in cfg, or "" if the claims satisfy it.
+func (cfg *PathPermissionConfig) missingPermission(claims navigaid.Claims) string {
+	for _, permission := range cfg.Permissions {
+		if !claims.HasPermissionsInOrganisation(permission) {
+			return permission
+		}
+	}
+
+	if len(cfg.AnyPermissions) > 0 && !claims.HasAnyPermissionInOrganisation(cfg.AnyPermissions...) {
+		return "one of " + strings.Join(cfg.AnyPermissions, ", ")
+	}
+
+	return ""
 }
 
 // matchPathConfig returns the configuration with the longest matching
@@ -80,17 +102,15 @@ func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	// Check org permissions
-	for _, permission := range matchedConfig.Permissions {
-		if !authInfo.Claims.HasPermissionsInOrganisation(permission) {
-			h.logger.Info("permission denied",
-				"path", path,
-				"permission", permission,
-				"user", authInfo.Claims.Subject,
-				"org", authInfo.Claims.Org)
-			http.Error(w, "Permission denied", http.StatusForbidden)
+	if missing := matchedConfig.missingPermission(authInfo.Claims); missing != "" {
+		h.logger.Info("permission denied",
+			"path", path,
+			"permission", missing,
+			"user", authInfo.Claims.Subject,
+			"org", authInfo.Claims.Org)
+		http.Error(w, "Permission denied", http.StatusForbidden)
 
-			return
-		}
+		return
 	}
 
 	// All permissions passed, serve the request
@@ -199,6 +219,15 @@ func WithPathPermissionService(
 //	    },
 //	}
 //
+// Example - Any one of several permissions (OR):
+//
+//	permissionConfigs := []dindenault.PathPermissionConfig{
+//	    {
+//	        PathPrefix:     "/service.v1.Service/Search",
+//	        AnyPermissions: []string{"service:read", "service:admin"},
+//	    },
+//	}
+//
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
 func PathInterceptors(logger *slog.Logger, configs []PathPermissionConfig) connect.Interceptor {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
@@ -223,17 +252,15 @@ func PathInterceptors(logger *slog.Logger, configs []PathPermissionConfig) conne
 			}
 
 			// Check org permissions
-			for _, permission := range matchedConfig.Permissions {
-				if !authInfo.Claims.HasPermissionsInOrganisation(permission) {
-					logger.Info("permission denied",
-						"path", path,
-						"permission", permission,
-						"user", authInfo.Claims.Subject,
-						"org", authInfo.Claims.Org)
+			if missing := matchedConfig.missingPermission(authInfo.Claims); missing != "" {
+				logger.Info("permission denied",
+					"path", path,
+					"permission", missing,
+					"user", authInfo.Claims.Subject,
+					"org", authInfo.Claims.Org)
 
-					return nil, connect.NewError(connect.CodePermissionDenied,
-						errors.New("missing required permission: "+permission))
-				}
+				return nil, connect.NewError(connect.CodePermissionDenied,
+					errors.New("missing required permission: "+missing))
 			}
 
 			// All permissions passed, continue with the request

@@ -120,8 +120,9 @@ A service that starts is a service whose auth is wired up.
 
 - **Authorization** — authentication only proves identity. Enforce
   permissions with `PathInterceptors`, `navigaid.RequirePermission`,
-  `Tool.RequiredPermissions` (MCP), or explicit checks
-  (`dindenault.HasPermission`, `HasPermissionInUnit`) in your handlers.
+  `Tool.RequiredPermissions`/`Tool.AnyPermissions` (MCP), or explicit
+  checks (`dindenault.HasPermission`, `HasAnyPermission`,
+  `HasPermissionInUnit`) in your handlers.
 - **Unmatched paths** — `PathInterceptors`/`WithPathPermissionService`
   pass requests through when no `PathPrefix` matches. Add a catch-all
   config if every path must require a permission.
@@ -419,7 +420,7 @@ app := dindenault.New(logger,
 `PathInterceptors` checks the RPC method path against configured prefixes and enforces the specified permissions:
 
 1. **Path Matching**: When a request comes in, the interceptor checks if the method path starts with any configured `PathPrefix`
-2. **Permission Checking**: If a match is found, it verifies the authenticated user has all required permissions
+2. **Permission Checking**: If a match is found, it verifies the authenticated user has all `Permissions` and at least one of `AnyPermissions`
 3. **Pass-through**: If no match is found, the request proceeds without additional permission checks
 
 ### PathPermissionConfig Structure
@@ -433,7 +434,18 @@ type PathPermissionConfig struct {
     // Permissions are the organization-level permissions required
     // All permissions must be present for the request to succeed
     Permissions []string
+
+    // AnyPermissions are organization-level permissions of which at
+    // least one must be present (OR). Combined with Permissions,
+    // both conditions must hold.
+    AnyPermissions []string
 }
+```
+
+Allow a method for users with either of several permissions:
+
+```go
+{PathPrefix: "/api.v1.Public/Search", AnyPermissions: []string{"api:read", "api:admin"}},
 ```
 
 ### Complete Example with Multiple Services

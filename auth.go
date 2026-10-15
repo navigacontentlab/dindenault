@@ -3,6 +3,7 @@ package dindenault
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"connectrpc.com/connect"
 
@@ -104,25 +105,53 @@ func AuthorizeWithDetails(ctx context.Context, permission string) (*AuthResult, 
 			fmt.Errorf("missing required permission: %s", permission))
 	}
 
+	return newAuthResult(auth.Claims), nil
+}
+
+// AuthorizeWithAnyPermission works like AuthorizeWithDetails, but
+// succeeds when the user holds at least one of the given
+// organization-level permissions (OR). With no permissions given, no
+// permission check is made.
+//
+// Example:
+//
+//	authResult, err := dindenault.AuthorizeWithAnyPermission(ctx, "service:read", "service:admin")
+//	if err != nil {
+//	    return nil, err // Already formatted as connect.Error
+//	}
+func AuthorizeWithAnyPermission(ctx context.Context, permissions ...string) (*AuthResult, error) {
+	auth, err := navigaid.GetAuth(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated,
+			fmt.Errorf("failed to get authorization: %w", err))
+	}
+
+	if len(permissions) > 0 && !auth.Claims.HasAnyPermissionInOrganisation(permissions...) {
+		return nil, connect.NewError(connect.CodePermissionDenied,
+			fmt.Errorf("missing required permission: one of %s", strings.Join(permissions, ", ")))
+	}
+
+	return newAuthResult(auth.Claims), nil
+}
+
+// newAuthResult copies the user details from claims into an AuthResult.
+func newAuthResult(claims navigaid.Claims) *AuthResult {
 	// Copy unit permissions with their unit context preserved
-	unitPermissions := make(map[string][]string, len(auth.Claims.Permissions.Units))
-	for unit, unitPerms := range auth.Claims.Permissions.Units {
+	unitPermissions := make(map[string][]string, len(claims.Permissions.Units))
+	for unit, unitPerms := range claims.Permissions.Units {
 		unitPermissions[unit] = append([]string(nil), unitPerms...)
 	}
 
-	// Create and return the result with all available user information
-	result := &AuthResult{
-		Organization:    auth.Claims.Org,
-		GivenName:       auth.Claims.Userinfo.GivenName,
-		FamilyName:      auth.Claims.Userinfo.FamilyName,
-		Email:           auth.Claims.Userinfo.Email,
-		UserID:          auth.Claims.Subject,
-		Permissions:     append([]string(nil), auth.Claims.Permissions.Org...),
+	return &AuthResult{
+		Organization:    claims.Org,
+		GivenName:       claims.Userinfo.GivenName,
+		FamilyName:      claims.Userinfo.FamilyName,
+		Email:           claims.Userinfo.Email,
+		UserID:          claims.Subject,
+		Permissions:     append([]string(nil), claims.Permissions.Org...),
 		UnitPermissions: unitPermissions,
-		Groups:          auth.Claims.Groups,
+		Groups:          claims.Groups,
 	}
-
-	return result, nil
 }
 
 // GetAuthResultFromContext retrieves authentication details from the context
@@ -244,6 +273,24 @@ func HasPermission(ctx context.Context, permission string) bool {
 	}
 
 	return checkUserPermission(auth.Claims, permission)
+}
+
+// HasAnyPermission checks if the user has at least one of the
+// specified permissions at the organization level (OR). It returns
+// false when no permissions are given.
+//
+// Example:
+//
+//	if dindenault.HasAnyPermission(ctx, "content:write", "content:admin") {
+//	    // Allow editing
+//	}
+func HasAnyPermission(ctx context.Context, permissions ...string) bool {
+	auth, err := navigaid.GetAuth(ctx)
+	if err != nil {
+		return false
+	}
+
+	return auth.Claims.HasAnyPermissionInOrganisation(permissions...)
 }
 
 // HasPermissionInUnit checks if the user has the specified permission

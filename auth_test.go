@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -125,6 +126,34 @@ func TestHasPermission(t *testing.T) {
 
 	// Test with empty context
 	assert.False(t, da.HasPermission(context.Background(), "content:read"))
+}
+
+func TestHasAnyPermission(t *testing.T) {
+	ctx := createAuthContext()
+
+	assert.True(t, da.HasAnyPermission(ctx, "admin:manage", "content:read"))
+	assert.False(t, da.HasAnyPermission(ctx, "admin:manage", "content:write"),
+		"unit-scoped grants must not satisfy an org-level check")
+	assert.False(t, da.HasAnyPermission(ctx))
+	assert.False(t, da.HasAnyPermission(context.Background(), "content:read"))
+}
+
+func TestAuthorizeWithAnyPermission(t *testing.T) {
+	ctx := createAuthContext()
+
+	result, err := da.AuthorizeWithAnyPermission(ctx, "admin:manage", "content:view")
+	require.NoError(t, err)
+	assert.Equal(t, "test-org", result.Organization)
+
+	_, err = da.AuthorizeWithAnyPermission(ctx, "admin:manage", "content:write")
+	require.Error(t, err)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+
+	_, err = da.AuthorizeWithAnyPermission(ctx)
+	require.NoError(t, err, "no permissions means no permission check")
+
+	_, err = da.AuthorizeWithAnyPermission(context.Background(), "content:read")
+	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }
 
 func TestHasPermissionInUnit(t *testing.T) {
