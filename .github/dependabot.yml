@@ -18,6 +18,12 @@ updates:
       # v1.55+ requires Go 1.26. Remove when we move to Go 1.26.
       - dependency-name: github.com/aws/aws-lambda-go
         versions: [">= 1.55.0"]
+      # otel v1.47+ / contrib v0.72+ require Go 1.26. Remove when we move to
+      # Go 1.26 (planned for dindenault v1.9.0).
+      - dependency-name: go.opentelemetry.io/otel*
+        versions: [">= 1.47.0"]
+      - dependency-name: go.opentelemetry.io/contrib/*
+        versions: [">= 0.72.0"]
 
   - package-ecosystem: github-actions
     directory: "/"
