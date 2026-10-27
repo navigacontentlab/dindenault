@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-27
+
+### Added
+- `mcp.WithChallenge(metadataURL)`: `AuthMiddleware` requires a valid token
+  on every request, `initialize` and `tools/list` included, and answers with
+  `WWW-Authenticate: Bearer resource_metadata="…"` (plus
+  `error="invalid_token"` for a refused token), as the MCP authorization spec
+  asks. MCP clients such as Claude and VS Code only start their OAuth login on
+  that challenge. Without the option nothing changes.
+- `mcp.WithClaimsCheck(check)`: an extra check on the validated claims, for
+  example that the token belongs to the organisation in the hostname. A
+  refusal is answered and audited like an invalid token.
+
 ## [1.8.2] - 2026-10-15
 
 ### Added
@@ -241,7 +254,8 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.9.0
 [1.8.2]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.2
 [1.8.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.1
 [1.8.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.0

@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,41 @@ type AuthOption func(*authConfig)
 type authConfig struct {
 	publicTools map[string]struct{}
 	audit       AuditSink
+	metadataURL func(r *http.Request) string
+	checkClaims func(r *http.Request, claims navigaid.Claims) error
+}
+
+// WithChallenge turns on the MCP authorization spec's behaviour, which clients
+// such as Claude need before they start an OAuth login: every request needs a
+// valid token, initialize and tools/list included, and every 401 carries
+//
+//	WWW-Authenticate: Bearer resource_metadata="<metadataURL(r)>"
+//
+// with error="invalid_token" when a token was sent but refused. metadataURL
+// returns the RFC 9728 protected resource metadata URL for the request, which
+// names the authorization server. Tools exempted with WithPublicTools stay
+// public, and only rejected tools/call requests are audited, so the 401 every
+// client gets when it first connects does not fill the audit log.
+//
+// Without this option, discovery methods need no token and a 401 has no
+// challenge. That suits agents that are handed a token up front, but an MCP
+// client never learns that it should log in.
+func WithChallenge(metadataURL func(r *http.Request) string) AuthOption {
+	return func(c *authConfig) {
+		c.metadataURL = metadataURL
+	}
+}
+
+// WithClaimsCheck adds a check that runs after the token has been validated,
+// for rules the signature alone cannot express, such as a token having to
+// belong to the organisation named by the request's hostname. A non-nil error
+// rejects the request like an invalid token: 401, with error="invalid_token"
+// when WithChallenge is set, and an unauthenticated audit event for a
+// tools/call. The error is logged at info level and not sent to the client.
+func WithClaimsCheck(check func(r *http.Request, claims navigaid.Claims) error) AuthOption {
+	return func(c *authConfig) {
+		c.checkClaims = check
+	}
 }
 
 // WithAuthAuditSink sets where AuthMiddleware sends the audit event for a
@@ -43,8 +79,11 @@ func WithPublicTools(names ...string) AuthOption {
 // HTTP 401 before any tool logic runs.
 //
 // The methods "initialize", "notifications/initialized", and "tools/list" are
-// exempt from authentication — they carry no user data and MCP clients need
-// them for discovery before a token is available.
+// exempt from authentication — they carry no user data and agents use them
+// for discovery before a token is available. For MCP clients that log the
+// user in themselves (Claude, VS Code), use WithChallenge instead: it requires
+// a token on every request and answers with the challenge that starts the
+// client's OAuth login.
 //
 // Use WithPublicTools to additionally exempt specific tools from authentication:
 //
@@ -103,9 +142,11 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 
 		switch peek.Method {
 		case "initialize", "notifications/initialized", "tools/list":
-			next.ServeHTTP(w, r)
+			if cfg.metadataURL == nil {
+				next.ServeHTTP(w, r)
 
-			return
+				return
+			}
 		case methodToolsCall:
 			if _, ok := cfg.publicTools[peek.Params.Name]; ok {
 				next.ServeHTTP(w, r)
@@ -116,9 +157,13 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 
 		// A rejected tools/call never reaches the server, so it is audited
 		// here — failed calls are what a security team alerts on.
-		rejectCall := func(reason string) {
+		rejectCall := func(reason, errCode string) {
 			if peek.Method == methodToolsCall {
 				auditRejected(r, cfg, next, peek.Params.Name, peek.Params.Meta, reason)
+			}
+
+			if cfg.metadataURL != nil {
+				w.Header().Set("WWW-Authenticate", challenge(cfg.metadataURL(r), errCode))
 			}
 
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -127,7 +172,7 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 		token, err := navigaid.GetAuthToken(r.Header)
 		if err != nil {
 			logger.Debug("mcp: missing authorization token", "error", err)
-			rejectCall("missing token")
+			rejectCall("missing token", "")
 
 			return
 		}
@@ -135,9 +180,18 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 		claims, err := jwks.Validate(token)
 		if err != nil {
 			logger.Debug("mcp: invalid token", "error", err)
-			rejectCall("invalid token")
+			rejectCall("invalid token", "invalid_token")
 
 			return
+		}
+
+		if cfg.checkClaims != nil {
+			if err := cfg.checkClaims(r, claims); err != nil {
+				logger.InfoContext(r.Context(), "mcp: token refused by claims check", "error", err)
+				rejectCall("claims check failed", "invalid_token")
+
+				return
+			}
 		}
 
 		ctx := navigaid.SetAuth(r.Context(), navigaid.AuthInfo{
@@ -147,6 +201,16 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// challenge is the WWW-Authenticate value of a 401 (RFC 6750, RFC 9728).
+func challenge(metadataURL, errCode string) string {
+	value := fmt.Sprintf(`Bearer resource_metadata=%q`, metadataURL)
+	if errCode != "" {
+		value += fmt.Sprintf(`, error=%q`, errCode)
+	}
+
+	return value
 }
 
 func auditRejected(r *http.Request, cfg *authConfig, next http.Handler, tool string, meta map[string]any, reason string) {

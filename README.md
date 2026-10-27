@@ -960,6 +960,37 @@ interceptor) — so it works with any of dindenault's authentication
 entry points. `mcp.NewHTTPClient(ctx, base)` gives you an `http.Client`
 that forwards the token — and the correlation headers — automatically.
 
+### MCP Clients That Log In Themselves
+
+By default `AuthMiddleware` lets `initialize`, `notifications/initialized` and `tools/list` through without a token, and answers a rejected call with a bare 401. That suits agents that are handed a token up front, such as AgentCore. MCP clients that log the user in themselves (Claude, VS Code, Gemini CLI) need what the MCP authorization spec asks for: a 401 on every request without a valid token, `initialize` included, with a challenge that points at the protected resource metadata (RFC 9728). Turn that on with `mcp.WithChallenge`:
+
+```go
+dindenault.WithMCPAuth("/mcp", logger, imasURL, []mcp.AuthOption{
+    mcp.WithChallenge(func(r *http.Request) string {
+        return "https://" + r.Host + "/.well-known/oauth-protected-resource"
+    }),
+}, tools...)
+```
+
+```
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer resource_metadata="https://…/.well-known/oauth-protected-resource"
+```
+
+A token that was sent but refused adds `error="invalid_token"`. Serving the metadata and the authorization server is up to the service. Tools exempted with `WithPublicTools` stay public. Only rejected `tools/call` requests are audited, so the 401 every client gets when it first connects does not fill the audit log.
+
+`mcp.WithClaimsCheck` adds a rule after the signature check, for example that a token must belong to the organisation in the hostname. A refusal is answered like an invalid token:
+
+```go
+mcp.WithClaimsCheck(func(r *http.Request, claims navigaid.Claims) error {
+    if org := orgFromHost(r.Host); org != "" && !strings.EqualFold(claims.Org, org) {
+        return fmt.Errorf("token for %q on %q's address", claims.Org, org)
+    }
+
+    return nil
+})
+```
+
 ### Audit Events and Correlation
 
 Every `tools/call` writes one structured audit event, on by default — no
