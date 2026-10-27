@@ -216,8 +216,14 @@ func challenge(metadataURL, errCode string) string {
 func auditRejected(r *http.Request, cfg *authConfig, next http.Handler, tool string, meta map[string]any, reason string) {
 	sink, name := cfg.audit, ""
 
+	// The call never reaches the server, so the tool is looked up here: its
+	// read_only must match what an accepted call to it would record.
+	var registered *Tool
+
 	if srv, ok := next.(*Server); ok {
 		name = srv.name
+		registered = srv.toolMap[tool]
+
 		if sink == nil {
 			sink = srv.audit
 		}
@@ -231,5 +237,6 @@ func auditRejected(r *http.Request, cfg *authConfig, next http.Handler, tool str
 	event := newAuditEvent(ctx, auditServiceName(name), tool)
 	event.Outcome = OutcomeUnauthenticated
 	event.Error = reason
+	event.ReadOnly = registered.readOnly()
 	sink(ctx, event)
 }

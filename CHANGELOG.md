@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-27
+
+### Fixed
+- MCP audit: a `tools/call` rejected by `AuthMiddleware` (`unauthenticated`)
+  recorded `read_only: false` even for a tool annotated `mcp.ReadOnly()`. The
+  middleware now looks the tool up in the wrapped `*Server`, so the field
+  matches what an accepted call records. Unknown tools and handlers that are
+  not a `*Server` still record `false`.
+
 ## [1.9.0] - 2026-10-27
 
 ### Added
@@ -254,7 +263,8 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.9.1
 [1.9.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.9.0
 [1.8.2]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.2
 [1.8.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.1

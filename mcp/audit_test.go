@@ -249,6 +249,30 @@ func TestAudit_UnauthenticatedCallIsAuditedByMiddleware(t *testing.T) {
 	assert.Equal(t, testChatID, e.CorrelationID)
 }
 
+func TestAudit_RejectedCallKeepsReadOnly(t *testing.T) {
+	rec := &auditRecorder{}
+
+	readTool := echoTool()
+	readTool.Name = "read"
+	readTool.Annotations = mcp.ReadOnly()
+
+	writeTool := echoTool()
+	writeTool.Name = "write"
+
+	server := mcp.NewServer("svc", "1", readTool, writeTool).WithAuditSink(rec.sink)
+	handler := mcp.AuthMiddleware(discardLogger(), invalidJWKS(), server)
+
+	for name, want := range map[string]bool{"read": true, "write": false, "missing": false} {
+		rec.events = nil
+
+		serve(t, handler, callBody(name, `{}`), map[string]string{headerAuth: "Bearer bad"})
+
+		e := rec.only(t)
+		assert.Equal(t, mcp.OutcomeUnauthenticated, e.Outcome, name)
+		assert.Equal(t, want, e.ReadOnly, name)
+	}
+}
+
 func TestAudit_RejectedDiscoveryIsNotAudited(t *testing.T) {
 	rec := &auditRecorder{}
 	handler := mcp.AuthMiddleware(discardLogger(), invalidJWKS(),

@@ -218,6 +218,11 @@ type ToolAnnotations struct {
 	OpenWorldHint *bool `json:"openWorldHint,omitempty"`
 }
 
+// readOnly reports the tool's readOnlyHint, false for a nil tool or no hint.
+func (t *Tool) readOnly() bool {
+	return t != nil && t.Annotations != nil && t.Annotations.ReadOnlyHint != nil && *t.Annotations.ReadOnlyHint
+}
+
 // ReadOnly returns annotations for a tool that only reads data.
 func ReadOnly() *ToolAnnotations {
 	readOnly := true
@@ -477,9 +482,7 @@ func (s *Server) emitAudit(
 	event.DurationMS = time.Since(start).Milliseconds()
 	event.ResultBytes = resultBytes
 
-	if tool != nil && tool.Annotations != nil && tool.Annotations.ReadOnlyHint != nil {
-		event.ReadOnly = *tool.Annotations.ReadOnlyHint
-	}
+	event.ReadOnly = tool.readOnly()
 
 	if args != nil {
 		event.ArgsSHA256 = fingerprint(args)
