@@ -991,6 +991,31 @@ mcp.WithClaimsCheck(func(r *http.Request, claims navigaid.Claims) error {
 })
 ```
 
+### OAuth Scopes
+
+When your authorization server lets the user grant only some scopes, give each tool the scopes it needs with `RequiredScopes`, and tell `AuthMiddleware` what the token was granted with `mcp.WithScopes`. The function runs once the token has been validated, with the claims in `r`'s context:
+
+```go
+search := mcp.Tool{Name: "search", RequiredScopes: []string{"content:read"}, /* … */}
+write := mcp.Tool{Name: "write_document", RequiredScopes: []string{"content:write"}, /* … */}
+
+dindenault.WithMCPAuth("/mcp", logger, imasURL, []mcp.AuthOption{
+    mcp.WithChallenge(metadataURL),
+    mcp.WithScopes(func(r *http.Request) []string {
+        return scopesFromToken(r) // e.g. what your sealed token carries
+    }),
+}, search, write)
+```
+
+`tools/list` only shows the tools the granted scopes cover. A `tools/call` to any other tool is answered with a step-up challenge, and audited as `denied`:
+
+```
+HTTP/1.1 403 Forbidden
+WWW-Authenticate: Bearer error="insufficient_scope", scope="content:read content:write", resource_metadata="https://…/.well-known/oauth-protected-resource", error_description="the write_document tool needs content:write"
+```
+
+`scope` lists what was already granted plus what is missing, so the new login keeps what the client could already do. `resource_metadata` is only sent with `WithChallenge`. A tool with `RequiredScopes` fails closed: with no granted scopes in the context (no `WithScopes`, or a `WithPublicTools` tool) it is hidden and refused. Tools without `RequiredScopes` are not affected. If your own middleware knows the scopes, set them with `mcp.ContextWithGrantedScopes` instead. Handlers read them with `mcp.GrantedScopesFromContext`.
+
 ### Audit Events and Correlation
 
 Every `tools/call` writes one structured audit event, on by default — no
@@ -1005,7 +1030,8 @@ which workflow, and what came of it:
  "args_bytes":5120,"result_bytes":230}
 ```
 
-- `outcome` is `ok`, `tool_error`, `denied` (missing `RequiredPermissions`),
+- `outcome` is `ok`, `tool_error`, `denied` (missing `RequiredScopes` or
+  `RequiredPermissions`),
   `unauthenticated` (rejected by `AuthMiddleware` — audited too, since failed
   calls are what security teams alert on), `unknown_tool` or `invalid_params`.
 - Tool arguments and results are **never** recorded — they are customer

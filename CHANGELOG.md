@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-28
+
+### Added
+- OAuth scopes for MCP tools. `mcp.Tool.RequiredScopes` lists the scopes a
+  caller's token must all have been granted. `tools/list` leaves out the tools
+  the granted scopes do not cover, and a `tools/call` to one gets HTTP 403 with
+  `WWW-Authenticate: Bearer error="insufficient_scope", scope="<granted +
+  missing>", resource_metadata="…"` (`resource_metadata` only with
+  `WithChallenge`), audited as `denied` with `missing scopes: […]`. The
+  `scope` value keeps what was already granted, so the client's new login
+  does not lose it.
+- `mcp.WithScopes(func(r *http.Request) []string)`: tells `AuthMiddleware`
+  which scopes the validated token was granted (the claims are already in
+  `r`'s context). `mcp.ContextWithGrantedScopes` sets them from another auth
+  layer, and `mcp.GrantedScopesFromContext` reads them in a handler.
+- A tool with `RequiredScopes` fails closed: without granted scopes in the
+  context, for example when `WithScopes` is missing or the tool is exempted
+  with `WithPublicTools`, it is hidden and refused. Tools without
+  `RequiredScopes` behave as before.
+
 ## [1.9.1] - 2026-10-27
 
 ### Fixed
@@ -263,7 +283,8 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.10.0
 [1.9.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.9.1
 [1.9.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.9.0
 [1.8.2]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.8.2

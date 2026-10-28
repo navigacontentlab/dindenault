@@ -114,7 +114,7 @@ func withCorrelation(ctx context.Context, r *http.Request) context.Context {
 const (
 	OutcomeOK              = "ok"              // the tool ran and returned a result
 	OutcomeToolError       = "tool_error"      // the tool ran and returned an error
-	OutcomeDenied          = "denied"          // authenticated, but missing RequiredPermissions or AnyPermissions
+	OutcomeDenied          = "denied"          // authenticated, but missing RequiredScopes, RequiredPermissions or AnyPermissions
 	OutcomeUnauthenticated = "unauthenticated" // no or invalid token (AuthMiddleware)
 	OutcomeUnknownTool     = "unknown_tool"    // no tool with that name
 	OutcomeInvalidParams   = "invalid_params"  // tools/call params could not be decoded

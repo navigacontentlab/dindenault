@@ -186,6 +186,15 @@ type Tool struct {
 	// auth information. Leave empty to skip the check.
 	AnyPermissions []string
 
+	// RequiredScopes lists OAuth scopes the caller's token must all have
+	// been granted (see WithScopes and ContextWithGrantedScopes). A caller
+	// without them does not see the tool in tools/list, and a tools/call
+	// gets HTTP 403 with an insufficient_scope challenge that asks for the
+	// missing scopes. Without granted scopes in the context, a tool that
+	// lists scopes is hidden and refused, so it cannot be reached by
+	// forgetting WithScopes. Leave empty to skip the check.
+	RequiredScopes []string
+
 	// Annotations are optional hints about the tool's behavior, sent in
 	// tools/list. Clients use them for UX decisions, e.g. skipping the
 	// confirmation prompt for read-only tools. They are hints, not a
@@ -342,7 +351,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Notification — no response per spec.
 		w.WriteHeader(http.StatusAccepted)
 	case "tools/list":
-		s.handleToolsList(w, &req)
+		s.handleToolsList(ctx, w, &req)
 	case methodToolsCall:
 		s.handleToolsCall(ctx, w, &req)
 	default:
@@ -372,10 +381,17 @@ func (s *Server) handleInitialize(w http.ResponseWriter, req *jsonRPCRequest) {
 	})
 }
 
-func (s *Server) handleToolsList(w http.ResponseWriter, req *jsonRPCRequest) {
+func (s *Server) handleToolsList(ctx context.Context, w http.ResponseWriter, req *jsonRPCRequest) {
 	defs := make([]toolDefinition, 0, len(s.tools))
+	granted := GrantedScopesFromContext(ctx)
 
 	for _, t := range s.tools {
+		// A tool the caller's scopes do not cover is left out: listing it
+		// would only lead the model into a call that gets a 403.
+		if len(t.missingScopes(granted)) > 0 {
+			continue
+		}
+
 		schema := t.InputSchema
 		if schema == nil {
 			schema = defaultInputSchema
@@ -414,6 +430,14 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 	if !ok {
 		s.emitAudit(ctx, start, nil, params.Name, args, 0, OutcomeUnknownTool, "")
 		writeError(w, req.ID, codeInvalidParams, fmt.Sprintf("Unknown tool: %q", params.Name))
+
+		return
+	}
+
+	if missing := tool.missingScopes(GrantedScopesFromContext(ctx)); len(missing) > 0 {
+		s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeDenied,
+			fmt.Sprintf("missing scopes: %v", missing))
+		writeInsufficientScope(ctx, w, params.Name, missing)
 
 		return
 	}
