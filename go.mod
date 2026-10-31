@@ -4,6 +4,9 @@ go 1.25.7
 
 toolchain go1.25.13
 
+// v1.10.0 added per-tool OAuth scopes, which were removed again.
+retract v1.10.0
+
 require (
 	connectrpc.com/connect v1.21.0
 	github.com/aws/aws-lambda-go v1.54.0

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,24 +19,6 @@ type authConfig struct {
 	audit       AuditSink
 	metadataURL func(r *http.Request) string
 	checkClaims func(r *http.Request, claims navigaid.Claims) error
-	scopes      func(r *http.Request) []string
-}
-
-// WithScopes tells AuthMiddleware which OAuth scopes the caller's token was
-// granted, for tools that set RequiredScopes. scopes runs once the token has
-// been validated, with the claims already in r's context (navigaid.GetAuth),
-// and its result is what GrantedScopesFromContext returns. The Server leaves
-// tools whose RequiredScopes the scopes do not cover out of tools/list, and
-// answers a tools/call to one with 403 and
-//
-//	WWW-Authenticate: Bearer error="insufficient_scope", scope="<granted + needed>", resource_metadata="…"
-//
-// (resource_metadata only with WithChallenge), audited as denied. Tools
-// without RequiredScopes are not affected.
-func WithScopes(scopes func(r *http.Request) []string) AuthOption {
-	return func(c *authConfig) {
-		c.scopes = scopes
-	}
 }
 
 // WithChallenge turns on the MCP authorization spec's behaviour, which clients
@@ -217,14 +198,6 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 			AccessToken: token,
 			Claims:      claims,
 		}, nil)
-
-		if cfg.metadataURL != nil {
-			ctx = context.WithValue(ctx, metadataURLKey, cfg.metadataURL(r))
-		}
-
-		if cfg.scopes != nil {
-			ctx = ContextWithGrantedScopes(ctx, cfg.scopes(r.WithContext(ctx)))
-		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

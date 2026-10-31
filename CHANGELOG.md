@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-10-31
+
+### Removed
+- OAuth scopes for MCP tools, added in 1.10.0: `mcp.Tool.RequiredScopes`,
+  `mcp.WithScopes`, `mcp.ContextWithGrantedScopes` and
+  `mcp.GrantedScopesFromContext`. v1.10.0 is retracted; tools are again
+  listed and callable for every authenticated caller.
+
 ## [1.10.0] - 2026-10-28
 
 ### Added
