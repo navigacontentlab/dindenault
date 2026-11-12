@@ -141,7 +141,7 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 		_ = json.Unmarshal(body, &peek)
 
 		switch peek.Method {
-		case "initialize", "notifications/initialized", "tools/list":
+		case methodInitialize, "notifications/initialized", methodPing, methodDiscover, methodList:
 			if cfg.metadataURL == nil {
 				next.ServeHTTP(w, r)
 

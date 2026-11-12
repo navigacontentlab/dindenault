@@ -1,8 +1,11 @@
 // Package mcp implements a stateless MCP (Model Context Protocol) Streamable
 // HTTP server for use with AWS Lambda and AWS Bedrock AgentCore.
 //
-// The server handles JSON-RPC 2.0 requests over plain HTTP POST, supporting
-// the initialize, tools/list, and tools/call methods from the MCP spec.
+// The server handles JSON-RPC 2.0 requests over plain HTTP POST. It speaks the
+// stateless 2026-07-28 revision of the MCP spec (server/discover, tools/list,
+// tools/call, with the version in each request's _meta) and, on the same
+// endpoint, the initialize-based revisions 2025-03-26 to 2025-11-25
+// (initialize, ping, tools/list, tools/call).
 //
 // # Basic Usage
 //
@@ -57,6 +60,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/navigacontentlab/dindenault/navigaid"
@@ -119,6 +123,11 @@ const (
 	codeParseError     = -32700
 	codeInvalidParams  = -32602
 	codeMethodNotFound = -32601
+
+	methodInitialize = "initialize"
+	methodPing       = "ping"
+	methodDiscover   = "server/discover"
+	methodList       = "tools/list"
 
 	// codePermissionDenied is in the JSON-RPC implementation-defined
 	// server error range (-32000 to -32099).
@@ -335,18 +344,64 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx = context.WithValue(ctx, authorizationKey, auth)
 	}
 
-	switch req.Method {
-	case "initialize":
-		s.handleInitialize(w, &req)
-	case "notifications/initialized":
-		// Notification — no response per spec.
+	if version, meta, ok := modernVersion(req.Params); ok && req.Method != methodInitialize {
+		s.serveModern(ctx, w, r, &req, version, meta)
+
+		return
+	}
+
+	if isModernHeader(r.Header.Get(headerProtocolVersion)) {
+		writeErrorStatus(w, http.StatusBadRequest, req.ID, codeInvalidParams,
+			"Invalid params: _meta."+metaProtocolVersion+" is required", nil)
+
+		return
+	}
+
+	// Notifications get no response body.
+	if len(req.ID) == 0 && strings.HasPrefix(req.Method, "notifications/") {
 		w.WriteHeader(http.StatusAccepted)
-	case "tools/list":
-		s.handleToolsList(w, &req)
+
+		return
+	}
+
+	switch req.Method {
+	case methodInitialize:
+		s.handleInitialize(w, &req)
+	case methodPing:
+		writeResult(w, req.ID, struct{}{})
+	case methodList:
+		s.handleToolsList(w, &req, false)
 	case methodToolsCall:
-		s.handleToolsCall(ctx, w, &req)
+		s.handleToolsCall(ctx, w, &req, false)
 	default:
 		writeError(w, req.ID, codeMethodNotFound, "Method not found: "+req.Method)
+	}
+}
+
+// serveModern handles a request of a stateless revision (2026-07-28).
+func (s *Server) serveModern(
+	ctx context.Context, w http.ResponseWriter, r *http.Request, req *jsonRPCRequest, version string, meta requestMeta,
+) {
+	if len(req.ID) == 0 {
+		// This revision defines no client notifications over HTTP; accept and ignore.
+		w.WriteHeader(http.StatusAccepted)
+
+		return
+	}
+
+	if !validateModern(w, r, req, version, meta) {
+		return
+	}
+
+	switch req.Method {
+	case methodDiscover:
+		s.handleDiscover(w, req)
+	case methodList:
+		s.handleToolsList(w, req, true)
+	case methodToolsCall:
+		s.handleToolsCall(ctx, w, req, true)
+	default:
+		writeErrorStatus(w, http.StatusNotFound, req.ID, codeMethodNotFound, "Method not found: "+req.Method, nil)
 	}
 }
 
@@ -363,16 +418,15 @@ func (s *Server) handleInitialize(w http.ResponseWriter, req *jsonRPCRequest) {
 		Capabilities: serverCapabilities{
 			Tools: &toolsCapability{},
 		},
-		ServerInfo: serverInfo{
-			Name:        s.name,
-			Version:     s.version,
-			Title:       s.title,
-			Description: s.description,
-		},
+		ServerInfo: s.info(),
 	})
 }
 
-func (s *Server) handleToolsList(w http.ResponseWriter, req *jsonRPCRequest) {
+func (s *Server) info() serverInfo {
+	return serverInfo{Name: s.name, Version: s.version, Title: s.title, Description: s.description}
+}
+
+func (s *Server) handleToolsList(w http.ResponseWriter, req *jsonRPCRequest, modern bool) {
 	defs := make([]toolDefinition, 0, len(s.tools))
 
 	for _, t := range s.tools {
@@ -389,10 +443,20 @@ func (s *Server) handleToolsList(w http.ResponseWriter, req *jsonRPCRequest) {
 		})
 	}
 
-	writeResult(w, req.ID, toolsListResult{Tools: defs})
+	res := toolsListResult{Tools: defs}
+	if modern {
+		res.ResultType, res.TTLMillis, res.CacheScope = resultComplete, listTTLMillis, cacheScopePublic
+	}
+
+	writeResult(w, req.ID, res)
 }
 
-func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req *jsonRPCRequest) {
+func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req *jsonRPCRequest, modern bool) {
+	resultType := ""
+	if modern {
+		resultType = resultComplete
+	}
+
 	start := time.Now()
 
 	var params toolsCallParams
@@ -453,8 +517,9 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		// Per MCP spec, tool execution errors are returned as a successful
 		// JSON-RPC response with isError=true in the result.
 		writeResult(w, req.ID, toolsCallResult{
-			Content: []contentItem{{Type: "text", Text: "Error: " + err.Error()}},
-			IsError: true,
+			ResultType: resultType,
+			Content:    []contentItem{{Type: "text", Text: "Error: " + err.Error()}},
+			IsError:    true,
 		})
 
 		return
@@ -462,7 +527,8 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 
 	s.emitAudit(ctx, start, tool, params.Name, args, len(output), OutcomeOK, "")
 	writeResult(w, req.ID, toolsCallResult{
-		Content: []contentItem{{Type: "text", Text: string(output)}},
+		ResultType: resultType,
+		Content:    []contentItem{{Type: "text", Text: string(output)}},
 	})
 }
 
@@ -511,6 +577,7 @@ type jsonRPCResponse struct {
 type jsonRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 type initializeResult struct {
@@ -544,7 +611,10 @@ type toolDefinition struct {
 }
 
 type toolsListResult struct {
-	Tools []toolDefinition `json:"tools"`
+	ResultType string           `json:"resultType,omitempty"`
+	Tools      []toolDefinition `json:"tools"`
+	TTLMillis  int              `json:"ttlMs,omitempty"`
+	CacheScope string           `json:"cacheScope,omitempty"`
 }
 
 type toolsCallParams struct {
@@ -559,8 +629,9 @@ type contentItem struct {
 }
 
 type toolsCallResult struct {
-	Content []contentItem `json:"content"`
-	IsError bool          `json:"isError,omitempty"`
+	ResultType string        `json:"resultType,omitempty"`
+	Content    []contentItem `json:"content"`
+	IsError    bool          `json:"isError,omitempty"`
 }
 
 // ── Response helpers ───────────────────────────────────────────────────────────
@@ -577,13 +648,19 @@ func writeResult(w http.ResponseWriter, id json.RawMessage, result any) {
 }
 
 func writeError(w http.ResponseWriter, id json.RawMessage, code int, message string) {
-	// JSON-RPC errors are always returned with HTTP 200 per spec.
+	// Legacy revisions return JSON-RPC errors with HTTP 200.
+	writeErrorStatus(w, http.StatusOK, id, code, message, nil)
+}
+
+// writeErrorStatus writes a JSON-RPC error with an HTTP status; the stateless
+// revisions use 400 and 404 for protocol errors.
+func writeErrorStatus(w http.ResponseWriter, status int, id json.RawMessage, code int, message string, data any) {
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
-		Error:   &jsonRPCError{Code: code, Message: message},
+		Error:   &jsonRPCError{Code: code, Message: message, Data: data},
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(resp)
 }
