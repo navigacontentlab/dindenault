@@ -24,6 +24,9 @@ updates:
         versions: [">= 1.47.0"]
       - dependency-name: go.opentelemetry.io/contrib/*
         versions: [">= 0.72.0"]
+      # v1.21.1+ requires Go 1.26. Remove when we move to Go 1.26.
+      - dependency-name: connectrpc.com/connect
+        versions: [">= 1.21.1"]
 
   - package-ecosystem: github-actions
     directory: "/"

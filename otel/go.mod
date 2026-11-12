@@ -1,9 +1,11 @@
 module github.com/navigacontentlab/dindenault/otel
 
-go 1.26.0
+go 1.25.7
+
+toolchain go1.25.13
 
 require (
-	connectrpc.com/connect v1.21.1
+	connectrpc.com/connect v1.21.0
 	github.com/aws/aws-sdk-go-v2 v1.47.8
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.75.6
 	github.com/navigacontentlab/dindenault v1.11.0
