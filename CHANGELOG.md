@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-12
+
 ### Added
 - MCP: the stateless 2026-07-28 revision, on the same endpoint as the
   initialize-based ones. A request whose `params._meta` carries
@@ -314,7 +316,9 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.11.0
+[1.10.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.10.1
 [1.10.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.10.0
 [1.9.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.9.1
 [1.9.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.9.0
