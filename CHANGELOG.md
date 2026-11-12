@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- MCP: the stateless 2026-07-28 revision, on the same endpoint as the
+  initialize-based ones. A request whose `params._meta` carries
+  `io.modelcontextprotocol/protocolVersion` is served by the new rules:
+  `server/discover`; `MCP-Protocol-Version`, `Mcp-Method` and (for
+  `tools/call`) `Mcp-Name` headers must match the body (`-32020`, HTTP 400;
+  base64 `Mcp-Name` values are decoded); unknown versions get `-32022` with
+  `data.supported`; `_meta.io.modelcontextprotocol/clientCapabilities` is
+  required; results carry `resultType: "complete"`, and `tools/list` adds
+  `ttlMs` and `cacheScope: "public"`; unknown and removed methods (such as
+  `ping`) get `-32601` with HTTP 404.
+- MCP: `ping` for initialize-based clients (2025-03-26 to 2025-11-25). It was
+  missing, so directories that measure latency with it saw an error.
+- MCP: every `notifications/*` message without an id is answered with 202, not
+  only `notifications/initialized`.
+- `AuthMiddleware` lets `ping` and `server/discover` through without a token,
+  like `initialize` and `tools/list`.
+
+### Unchanged
+- `initialize` still negotiates 2025-11-25, 2025-06-18 or 2025-03-26; a client
+  asking it for 2026-07-28 gets 2025-11-25, as the spec requires (initialize
+  always selects the legacy rules).
+
 ## [1.10.1] - 2026-10-31
 
 ### Removed
