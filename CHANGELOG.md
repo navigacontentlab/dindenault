@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-18
+
 ### Added
 - MCP: tools can ask the user (2026-07-28 multi round-trip requests, SEP-2322).
   A handler returns `mcp.RequireInput(state, elicitations)` and the call is
