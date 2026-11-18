@@ -1047,6 +1047,46 @@ app := dindenault.New(logger,
 
 When a handler returns an error, the MCP server returns a successful JSON-RPC response with `isError: true` in the result (per MCP spec). This lets the AI model observe the error and decide how to proceed, rather than treating it as a protocol-level failure.
 
+### Asking the User (Elicitation)
+
+In the stateless `2026-07-28` revision a server no longer sends the client requests of its own. A tool that needs an answer from the user answers `tools/call` with an `InputRequiredResult` (`resultType: "input_required"`, the questions in `inputRequests`, an opaque `requestState`), and the client asks the user and calls the tool again with `inputResponses` and the same `requestState` ([Multi Round-Trip Requests](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr)). The server keeps nothing between the two calls.
+
+Turn it on with a signing key, then return `mcp.RequireInput` from a handler:
+
+```go
+app := dindenault.New(logger,
+    dindenault.WithMCPInputRequired(stateKey, 10*time.Minute), // ≥ 32 secret bytes, same on every instance
+    dindenault.WithMCPAuth("/mcp", logger, imasURL, nil, tools...),
+)
+
+func handler(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+    in := mcp.InputFromContext(ctx)
+    if !in.CanElicit() {
+        return nil, ErrNeedsApproval // what the tool did before: no client to ask
+    }
+
+    if !in.Retry() {
+        return nil, mcp.RequireInput(myState{IDs: ids}, map[string]mcp.Elicitation{
+            "approve": {
+                Message:         "Unpublish these 3 articles?",
+                RequestedSchema: json.RawMessage(`{"type":"object","properties":{"approved":{"type":"array","items":{"type":"string","enum":["a","b","c"]}}}}`),
+            },
+        })
+    }
+
+    var st myState
+    _ = in.State(&st)                    // what RequireInput was given, verified
+    answer, ok := in.Elicited("approve") // the user's answer: Action accept/decline/cancel, Content
+    // ...
+}
+```
+
+- **Only for clients that can answer.** `CanElicit` is true only on a `2026-07-28` request whose `_meta["io.modelcontextprotocol/clientCapabilities"]` declares `elicitation` with form mode (`{}` or `{"form":{}}`; `{"url":{}}` alone does not count), and only when the server has a key. Clients of the initialize-based revisions never get it. A handler that returns `RequireInput` anyway gets `mcp.ErrInputNotSupported` as its tool error, so the server never sends a request the client did not declare.
+- **The state cannot be forged.** `requestState` is the handler's state plus the tool name, a digest of the arguments (key order and whitespace do not matter), the caller's org and subject, and an expiry, signed with HMAC-SHA256. A retry whose state was changed, has expired, comes from another caller or carries other arguments is refused with `-32602` (HTTP 400) and audited as `invalid_params`; so is a `requestState` sent to a server without a key. The state is signed, not encrypted: put ids in it, not secrets.
+- **Not single-use.** As the spec warns, signing bounds replay but does not stop a client from sending the same answer twice within the TTL. A tool whose effect must happen at most once has to check that itself (for example by comparing revisions it put in the state).
+- Asking is audited as `input_required`; the retry is audited like any call.
+- Only form-mode `elicitation/create` is offered; sampling and roots are not.
+
 ### Protocol Version Negotiation
 
 `initialize` negotiates the MCP protocol version as the spec's lifecycle describes. The server speaks `2025-11-25`, `2025-06-18` and `2025-03-26`, and answers with the version the client asks for when it is one of those. For anything else it answers with the newest supported version that is not newer than the request: a client from the future gets `2025-11-25`, one in between gets the older neighbour. A client older than all three (`2024-11-05`), or one that sends no usable version, gets `2025-03-26` — what the server always answered before it negotiated.

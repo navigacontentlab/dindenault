@@ -2,6 +2,7 @@ package dindenault
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/navigacontentlab/dindenault/mcp"
 	"github.com/navigacontentlab/dindenault/navigaid"
@@ -98,6 +99,19 @@ func WithMCPAuth(path string, logger *slog.Logger, imasURL string, authOpts []mc
 			// cannot be applied to them.
 			SkipGlobalInterceptors: true,
 		})
+	}
+}
+
+// WithMCPInputRequired lets the tools of the MCP servers mounted by WithMCP and
+// WithMCPAuth ask the user a question (mcp.RequireInput) on 2026-07-28 requests
+// from clients that declared elicitation. key signs the requestState the
+// client echoes back (HMAC-SHA256, at least 32 bytes, the same for every
+// instance of the service); ttl is how long an answer is accepted, zero for
+// mcp.DefaultRequestStateTTL. It may appear before or after WithMCP/WithMCPAuth
+// and panics on a short key. See mcp.Server.WithInputRequired.
+func WithMCPInputRequired(key []byte, ttl time.Duration) Option {
+	return func(a *App) {
+		a.mcpInputKey, a.mcpInputTTL = key, ttl
 	}
 }
 

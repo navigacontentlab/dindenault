@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- MCP: tools can ask the user (2026-07-28 multi round-trip requests, SEP-2322).
+  A handler returns `mcp.RequireInput(state, elicitations)` and the call is
+  answered with an `InputRequiredResult` (`resultType: "input_required"`,
+  form-mode `elicitation/create` requests in `inputRequests`, a signed
+  `requestState`). On the retry `mcp.InputFromContext(ctx)` gives the state
+  back (`State`) and the answers (`Elicited`, an `ElicitResult`).
+- `mcp.Server.WithInputRequired(key, ttl)` and
+  `dindenault.WithMCPInputRequired(key, ttl)` turn it on. `requestState` is
+  signed with HMAC-SHA256 and bound to the tool, the arguments, the caller's
+  org and subject and an expiry (`mcp.DefaultRequestStateTTL`, 15 minutes); a
+  state that fails is refused with `-32602` and HTTP 400.
+- `Input.CanElicit` is true only for 2026-07-28 requests whose client
+  capabilities declare form elicitation, on a server with a key; otherwise the
+  tool gives its usual answer. `RequireInput` without it becomes the tool error
+  `mcp.ErrInputNotSupported`.
+- Audit outcome `input_required`.
+
 ## [1.11.0] - 2026-11-12
 
 ### Added
