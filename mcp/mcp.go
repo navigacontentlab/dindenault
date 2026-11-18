@@ -52,11 +52,20 @@
 // Server.WithAuditSink to send events elsewhere, or DisableAudit to turn it
 // off. Tool handlers read the correlation values with CorrelationFromContext;
 // NewHTTPClient forwards them downstream.
+//
+// # Asking the user
+//
+// On 2026-07-28 requests from clients that declared elicitation, a tool can
+// ask the user a question and get the answer on a second call (multi
+// round-trip requests): return RequireInput from the handler, read the answer
+// with InputFromContext. Server.WithInputRequired supplies the key that signs
+// the state between the two calls; see input.go.
 package mcp
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -250,6 +259,8 @@ type Server struct {
 	tools       []Tool
 	toolMap     map[string]*Tool
 	audit       AuditSink
+	// signer signs requestState; nil until WithInputRequired.
+	signer *stateSigner
 }
 
 // ServerInfo identifies the server to clients in the initialize response
@@ -511,7 +522,29 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		}
 	}
 
-	output, err := tool.Handler(ctx, args)
+	in, ok := s.callInput(ctx, w, req, &params, tool, args, modern, start)
+	if !ok {
+		return
+	}
+
+	output, err := tool.Handler(context.WithValue(ctx, inputKey{}, in), args)
+
+	if ire := (*InputRequiredError)(nil); errors.As(err, &ire) {
+		err = ErrInputNotSupported
+
+		if in.canElicit {
+			res, buildErr := s.inputRequiredResult(ctx, params.Name, args, ire)
+			if buildErr == nil {
+				s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeInputRequired, "")
+				writeResult(w, req.ID, res)
+
+				return
+			}
+
+			err = buildErr
+		}
+	}
+
 	if err != nil {
 		s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeToolError, err.Error())
 		// Per MCP spec, tool execution errors are returned as a successful
@@ -530,6 +563,56 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		ResultType: resultType,
 		Content:    []contentItem{{Type: "text", Text: string(output)}},
 	})
+}
+
+// callInput works out what the handler may ask and has been answered. For a
+// 2026-07-28 retry it verifies the requestState; a state that fails, or input
+// that cannot be read, is refused with -32602 and HTTP 400, and false is
+// returned.
+func (s *Server) callInput(
+	ctx context.Context, w http.ResponseWriter, req *jsonRPCRequest, params *toolsCallParams,
+	tool *Tool, args json.RawMessage, modern bool, start time.Time,
+) (Input, bool) {
+	if !modern {
+		return Input{}, true
+	}
+
+	in := Input{canElicit: s.signer != nil && clientCanElicitForm(params.Meta)}
+
+	refuse := func(msg string) (Input, bool) {
+		s.emitAudit(ctx, start, tool, params.Name, args, 0, OutcomeInvalidParams, msg)
+		writeErrorStatus(w, http.StatusBadRequest, req.ID, codeInvalidParams, "Invalid params: "+msg, nil)
+
+		return Input{}, false
+	}
+
+	if len(params.InputResponses) > 0 && string(params.InputResponses) != "null" {
+		if err := json.Unmarshal(params.InputResponses, &in.responses); err != nil || in.responses == nil {
+			return refuse("inputResponses must be an object")
+		}
+	}
+
+	if len(params.RequestState) == 0 || string(params.RequestState) == "null" {
+		return in, true
+	}
+
+	var token string
+	if err := json.Unmarshal(params.RequestState, &token); err != nil {
+		return refuse("requestState must be a string")
+	}
+
+	if s.signer == nil {
+		return refuse(errRequestState.Error() + ": this server issues none")
+	}
+
+	data, err := s.signer.verify(ctx, token, params.Name, args)
+	if err != nil {
+		return refuse(err.Error())
+	}
+
+	in.retry, in.state = true, data
+
+	return in, true
 }
 
 // emitAudit sends one AuditEvent for a tools/call. tool is nil when the call
@@ -621,6 +704,10 @@ type toolsCallParams struct {
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
 	Meta      map[string]any  `json:"_meta,omitempty"`
+	// RequestState and InputResponses come back on a 2026-07-28 retry after an
+	// InputRequiredResult; they are read only for that revision.
+	RequestState   json.RawMessage `json:"requestState,omitempty"`
+	InputResponses json.RawMessage `json:"inputResponses,omitempty"`
 }
 
 type contentItem struct {

@@ -106,3 +106,39 @@ func TestWithMCPServerInfo_AppliesToWithMCPAuth(t *testing.T) {
 	require.Len(t, events, 1)
 	assert.Equal(t, "my-service", events[0].Service)
 }
+
+// canElicit reports what a tool sees for a 2026-07-28 client that declared
+// elicitation.
+func canElicit(t *testing.T, opts ...dindenault.Option) bool {
+	t.Helper()
+
+	var seen mcp.Input
+
+	tool := mcp.Tool{Name: "ask", Handler: func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		seen = mcp.InputFromContext(ctx)
+
+		return json.RawMessage(`{}`), nil
+	}}
+
+	app := dindenault.New(slog.Default(), append(opts, dindenault.WithMCP("/mcp", tool))...)
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call",`+
+		`"params":{"name":"ask","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",`+
+		`"io.modelcontextprotocol/clientCapabilities":{"elicitation":{}}}}}`))
+	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	req.Header.Set("Mcp-Method", "tools/call")
+	req.Header.Set("Mcp-Name", "ask")
+
+	rr := httptest.NewRecorder()
+	app.Registrations()[0].Handler.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	return seen.CanElicit()
+}
+
+func TestWithMCPInputRequired(t *testing.T) {
+	key := []byte(strings.Repeat("k", 32))
+
+	assert.False(t, canElicit(t))
+	assert.True(t, canElicit(t, dindenault.WithMCPInputRequired(key, 0)))
+}

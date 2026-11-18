@@ -101,6 +101,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/aws/aws-lambda-go/events"
@@ -124,6 +125,9 @@ type App struct {
 	// run, so WithMCPServerInfo works regardless of option order.
 	mcpInfo    mcp.ServerInfo
 	mcpServers []*mcp.Server
+	// mcpInputKey and mcpInputTTL are applied like mcpInfo (WithMCPInputRequired).
+	mcpInputKey []byte
+	mcpInputTTL time.Duration
 }
 
 // GlobalInterceptors returns the list of global interceptors for testing.
@@ -166,6 +170,10 @@ func New(logger *slog.Logger, options ...Option) *App {
 
 	for _, server := range app.mcpServers {
 		server.WithInfo(app.mcpInfo)
+
+		if app.mcpInputKey != nil {
+			server.WithInputRequired(app.mcpInputKey, app.mcpInputTTL)
+		}
 	}
 
 	return app
