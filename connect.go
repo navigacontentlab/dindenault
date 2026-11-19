@@ -205,8 +205,8 @@ func WithService(path string, handler http.Handler) Option {
 //	)
 func WithConnectRPC(opts cors.Options) Option {
 	return func(a *App) {
-		// If no domains specified, use defaults
-		if len(opts.AllowedDomains) == 0 {
+		// If no domains or hosts are specified, use the default domains
+		if len(opts.AllowedDomains) == 0 && len(opts.AllowedHosts) == 0 {
 			opts.AllowedDomains = cors.DefaultDomains()
 		}
 
@@ -214,6 +214,8 @@ func WithConnectRPC(opts cors.Options) Option {
 
 		a.logger.Info("Connect RPC CORS support added globally",
 			"allowed_domains", opts.AllowedDomains,
+			"allowed_hosts", opts.AllowedHosts,
+			"allow_loopback", opts.AllowLoopback,
 			"allow_http", opts.AllowHTTP)
 	}
 }
