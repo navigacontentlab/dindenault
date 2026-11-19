@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-19
+
 ### Added
 - `cors.Options`: `AllowedHosts` (exact hosts, no subdomains),
   `AllowLoopback` (http and https on localhost, 127.0.0.1 and [::1]),
@@ -357,7 +359,9 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.13.0
+[1.12.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.12.0
 [1.11.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.11.0
 [1.10.1]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.10.1
 [1.10.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.10.0
