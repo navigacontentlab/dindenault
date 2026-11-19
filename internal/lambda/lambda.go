@@ -108,14 +108,18 @@ func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request,
 		HTTPMethod = event.RequestContext.HTTP.Method
 	}
 
+	// ALB passes query parameters as the client sent them, still
+	// URL-encoded ("If the query parameters are URL-encoded, the load
+	// balancer does not decode them"), so they are decoded once here
+	// before being encoded into RawQuery.
 	params := url.Values{}
 	for k, v := range event.QueryStringParameters {
-		params.Set(k, v)
+		params.Set(queryUnescape(k), queryUnescape(v))
 	}
 
 	for k, vals := range event.MultiValueQueryStringParameters {
 		for _, v := range vals {
-			params.Add(k, v)
+			params.Add(queryUnescape(k), queryUnescape(v))
 		}
 	}
 
@@ -165,4 +169,14 @@ func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request,
 	req.Header = headers
 
 	return req.WithContext(ctx), nil
+}
+
+// queryUnescape decodes an ALB query key or value. A value that is not
+// valid percent-encoding (a bare "%") is kept as it is.
+func queryUnescape(s string) string {
+	if v, err := url.QueryUnescape(s); err == nil {
+		return v
+	}
+
+	return s
 }

@@ -3,6 +3,7 @@ package cors_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/navigacontentlab/dindenault/cors"
@@ -12,6 +13,8 @@ const (
 	exampleDomain    = "example.com"
 	exampleDotDomain = ".example.com"
 	exampleAppOrigin = "https://app.example.com"
+	claudeHost       = "claude.ai"
+	claudeOrigin     = "https://claude.ai"
 )
 
 func TestStandardAllowOriginFunc(t *testing.T) {
@@ -188,4 +191,94 @@ func TestMiddlewareRequests(t *testing.T) {
 			t.Error("wildcard configuration must not allow credentials")
 		}
 	})
+}
+
+func TestAllowsOriginHostsAndLoopback(t *testing.T) {
+	opts := cors.Options{
+		AllowedHosts:  []string{claudeHost, "App.Customer.com"},
+		AllowLoopback: true,
+	}
+
+	for origin, want := range map[string]bool{
+		claudeOrigin:                   true,
+		"https://app.customer.com":     true,
+		"https://app.customer.com:443": true,
+		"https://evil.claude.ai":       false, // exact host, no subdomains
+		"https://claude.ai.evil.com":   false,
+		"http://claude.ai":             false, // http only on loopback
+		"http://localhost:3000":        true,
+		"http://127.0.0.1:5173":        true,
+		"https://[::1]:8443":           true,
+		"https://claude.ai/path":       false,
+		"https://user@claude.ai":       false,
+		"null":                         false,
+		"chrome-extension://abc":       false,
+	} {
+		if got := opts.AllowsOrigin(origin); got != want {
+			t.Errorf("AllowsOrigin(%q) = %v, want %v", origin, got, want)
+		}
+	}
+
+	if (cors.Options{AllowedHosts: []string{claudeHost}}).AllowsOrigin("http://localhost:3000") {
+		t.Error("loopback must not be allowed unless AllowLoopback is set")
+	}
+}
+
+func TestMiddlewareMCPBrowserClient(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="x"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+
+	handler := cors.Middleware(cors.Options{
+		AllowedHosts:  []string{claudeHost},
+		AllowHeaders:  []string{"X-Custom"},
+		ExposeHeaders: []string{"X-Trace"},
+		NoCredentials: true,
+	}, next)
+
+	pre := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
+	pre.Header.Set("Origin", claudeOrigin)
+	pre.Header.Set("Access-Control-Request-Method", "POST")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, pre)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("preflight: expected 204, got %d", rec.Code)
+	}
+
+	for _, want := range []string{"Authorization", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name", "Mcp-Session-Id", "X-Custom"} {
+		if !strings.Contains(rec.Header().Get("Access-Control-Allow-Headers"), want) {
+			t.Errorf("Allow-Headers %q lacks %s", rec.Header().Get("Access-Control-Allow-Headers"), want)
+		}
+	}
+
+	if rec.Header().Get("Access-Control-Allow-Credentials") != "" {
+		t.Error("NoCredentials must stop Allow-Credentials")
+	}
+
+	if got := rec.Header().Values("Vary"); len(got) != 1 || got[0] != "Origin" {
+		t.Errorf("Vary = %v, want [Origin]", got)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Origin", claudeOrigin)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected the handler's 401, got %d", rec.Code)
+	}
+
+	for _, want := range []string{"WWW-Authenticate", "Mcp-Session-Id", "X-Trace"} {
+		if !strings.Contains(rec.Header().Get("Access-Control-Expose-Headers"), want) {
+			t.Errorf("Expose-Headers %q lacks %s", rec.Header().Get("Access-Control-Expose-Headers"), want)
+		}
+	}
+
+	if rec.Header().Get("Access-Control-Allow-Credentials") != "" {
+		t.Error("NoCredentials must stop Allow-Credentials")
+	}
 }

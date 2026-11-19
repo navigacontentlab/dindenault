@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `cors.Options`: `AllowedHosts` (exact hosts, no subdomains),
+  `AllowLoopback` (http and https on localhost, 127.0.0.1 and [::1]),
+  `AllowHeaders` and `ExposeHeaders` (added to the defaults) and
+  `NoCredentials` (no `Access-Control-Allow-Credentials`, for bearer-token
+  services). `Options.AllowsOrigin` reports whether an origin is allowed.
+- CORS allows the MCP Streamable HTTP headers by default (`MCP-Protocol-Version`,
+  `Mcp-Method`, `Mcp-Name`, `Mcp-Session-Id`, `Last-Event-ID`) and exposes
+  `WWW-Authenticate`, `MCP-Protocol-Version` and `Mcp-Session-Id`, so an MCP
+  client in a browser can read a 401's `resource_metadata`.
+
+### Fixed
+- ALB query parameters are decoded once. ALB passes them to Lambda still
+  URL-encoded, and they were encoded again, so `r.URL.Query()` returned
+  e.g. `https%3A%2F%2Fclaude.ai%2F…`. API Gateway v2 is unchanged. A service
+  that decodes them itself (naviga-oc-mcp's `albquery`) must stop doing so
+  when it upgrades.
+- CORS refuses origins with a path, query or user info, and `null`.
+- `WithConnectRPC` falls back to `DefaultDomains` only when neither
+  `AllowedDomains` nor `AllowedHosts` is set.
+
 ## [1.12.0] - 2026-11-18
 
 ### Added
