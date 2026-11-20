@@ -8,7 +8,7 @@ require (
 	connectrpc.com/connect v1.21.1
 	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.76.0
-	github.com/navigacontentlab/dindenault v1.13.0
+	github.com/navigacontentlab/dindenault v1.14.0
 	go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-lambda-go/otellambda v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.47.0
