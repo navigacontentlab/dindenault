@@ -58,13 +58,14 @@ release:
 	@if [ "$(MODULE)" = "root" ]; then \
 		LATEST_ROOT=$$(git tag -l "v*" | sort -V | tail -n1); \
 		echo "🔁 Auto-bumping submodules to $$LATEST_ROOT"; \
-		# The new tag is not in the proxy or sum.golang.org yet, so fetch it \
-		# directly and skip the checksum database for this module only: \
-		# GOSUMDB=off would also block go1.26 toolchain downloads. \
 		GOPROXY=direct GONOSUMDB=github.com/navigacontentlab/dindenault $(MAKE) bump-submodules VERSION="$$LATEST_ROOT"; \
 	fi
 
 # Point the otel/xray submodules at a released root version and re-tidy.
+# After a root release the new tag is not in the proxy or sum.golang.org
+# yet, so `make release` fetches it directly and skips the checksum
+# database for dindenault only (GOSUMDB=off would also block Go toolchain
+# downloads).
 # `make release MODULE=root` runs this automatically for the new tag, so you
 # normally only invoke it directly to re-pin to an existing published version:
 #   make bump-submodules VERSION=v1.6.0      # bump require + go mod tidy
