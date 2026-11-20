@@ -13,6 +13,9 @@ import (
 // CorrelationFromContext) so downstream services can log the same ids. Both
 // are read from ctx at call time and baked into the transport.
 //
+// The token is not sent when a redirect leads to another scheme or host than
+// the request started with, so a redirect cannot carry it to a third party.
+//
 // Pass a shared base RoundTripper — e.g. http.DefaultTransport or a cached
 // *http.Transport — to preserve TCP connection pooling across calls. If base
 // is nil, http.DefaultTransport is used.

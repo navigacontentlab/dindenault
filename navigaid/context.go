@@ -16,29 +16,30 @@ type AuthInfo struct {
 	Claims      Claims
 }
 
-type ai struct {
-	Ac  AuthInfo
-	Err error
+// authEntry is the value stored under authInfoKey.
+type authEntry struct {
+	info AuthInfo
+	err  error
 }
 
 // GetAuth retrieves authentication information from the context.
 func GetAuth(ctx context.Context) (AuthInfo, error) {
-	auth, ok := ctx.Value(authInfoKey).(ai)
+	auth, ok := ctx.Value(authInfoKey).(authEntry)
 	if !ok {
 		return AuthInfo{}, errors.New("no authentication information in context")
 	}
 
-	if auth.Err != nil {
-		return AuthInfo{}, auth.Err
+	if auth.err != nil {
+		return AuthInfo{}, auth.err
 	}
 
-	return auth.Ac, nil
+	return auth.info, nil
 }
 
 // SetAuth adds authentication information to the context.
 func SetAuth(ctx context.Context, auth AuthInfo, err error) context.Context {
-	return context.WithValue(ctx, authInfoKey, ai{
-		Ac:  auth,
-		Err: err,
+	return context.WithValue(ctx, authInfoKey, authEntry{
+		info: auth,
+		err:  err,
 	})
 }

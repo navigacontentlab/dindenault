@@ -22,7 +22,7 @@ type TelemetryProvider interface {
 
 	// InstrumentHandler instruments a handler with telemetry.
 	// This is used for Lambda handlers and similar.
-	InstrumentHandler(handler interface{}) interface{}
+	InstrumentHandler(handler any) any
 }
 
 // TelemetryOptions contains configuration for telemetry.
@@ -55,7 +55,7 @@ func (n NoopTelemetry) Interceptor(_ *slog.Logger, _ TelemetryOptions) connect.I
 }
 
 // InstrumentHandler implements TelemetryProvider for NoopTelemetry.
-func (n NoopTelemetry) InstrumentHandler(handler interface{}) interface{} {
+func (n NoopTelemetry) InstrumentHandler(handler any) any {
 	return handler // Return handler unchanged
 }
 

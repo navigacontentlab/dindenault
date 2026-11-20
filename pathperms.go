@@ -5,10 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"path"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
 
+	"github.com/navigacontentlab/dindenault/internal/checkinterceptor"
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
 
@@ -48,52 +51,101 @@ func (cfg *PathPermissionConfig) missingPermission(claims navigaid.Claims) strin
 	return ""
 }
 
-// matchPathConfig returns the configuration with the longest matching
-// PathPrefix, or nil if none matches. Matching is case-insensitive to
-// stay consistent with the App's request routing.
-func matchPathConfig(configs []PathPermissionConfig, path string) *PathPermissionConfig {
+// pathMatcher finds the PathPermissionConfig for a path. Prefixes are
+// lowercased once, when the matcher is built, instead of on every request.
+type pathMatcher struct {
+	configs  []PathPermissionConfig
+	prefixes []string
+}
+
+// newPathMatcher copies configs, so later changes to the caller's slice do
+// not alter the permissions that are enforced.
+func newPathMatcher(configs []PathPermissionConfig) *pathMatcher {
+	m := &pathMatcher{
+		configs:  slices.Clone(configs),
+		prefixes: make([]string, len(configs)),
+	}
+
+	for i := range m.configs {
+		m.prefixes[i] = strings.ToLower(m.configs[i].PathPrefix)
+	}
+
+	return m
+}
+
+// match returns the configuration with the longest matching PathPrefix, or
+// nil if none matches. Matching is case-insensitive to stay consistent with
+// the App's request routing.
+func (m *pathMatcher) match(path string) *PathPermissionConfig {
 	path = strings.ToLower(path)
 
-	var matched *PathPermissionConfig
+	var (
+		matched   *PathPermissionConfig
+		matchedAt int
+	)
 
-	for i := range configs {
-		prefix := strings.ToLower(configs[i].PathPrefix)
-
-		if strings.HasPrefix(path, prefix) {
-			if matched == nil || len(configs[i].PathPrefix) > len(matched.PathPrefix) {
-				matched = &configs[i]
-			}
+	for i, prefix := range m.prefixes {
+		if strings.HasPrefix(path, prefix) && (matched == nil || len(prefix) > matchedAt) {
+			matched, matchedAt = &m.configs[i], len(prefix)
 		}
 	}
 
 	return matched
 }
 
+// cleanPath resolves "." and ".." segments and repeated slashes, keeping a
+// trailing slash, the way http.ServeMux does before routing.
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+
+	if p[0] != '/' {
+		p = "/" + p
+	}
+
+	cleaned := path.Clean(p)
+	if strings.HasSuffix(p, "/") && cleaned != "/" {
+		cleaned += "/"
+	}
+
+	return cleaned
+}
+
 // PathPermissionHandler wraps a Connect handler with path-specific permission checking.
 type PathPermissionHandler struct {
-	handler        http.Handler
-	logger         *slog.Logger
-	configurations []PathPermissionConfig
+	handler http.Handler
+	logger  *slog.Logger
+	matcher *pathMatcher
 }
 
 // ServeHTTP implements the http.Handler interface and applies path-based permission checks.
+//
+// A path with "..", "." or repeated slashes is checked against the rules for
+// the path as received and for its cleaned form, and must satisfy both: the
+// wrapped handler may route on either, and "/api/users/../admin" must not be
+// let through on the strength of a "/api/users" rule.
 func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
-	// Find the most specific matching path configuration
-	matchedConfig := matchPathConfig(h.configurations, path)
+	matched := []*PathPermissionConfig{h.matcher.match(path)}
+	if cleaned := cleanPath(path); cleaned != path {
+		if c := h.matcher.match(cleaned); c != matched[0] {
+			matched = append(matched, c)
+		}
+	}
+
+	matched = slices.DeleteFunc(matched, func(c *PathPermissionConfig) bool { return c == nil })
 
 	// If no matching configuration, just pass through to the handler
-	if matchedConfig == nil {
+	if len(matched) == 0 {
 		h.handler.ServeHTTP(w, r)
 
 		return
 	}
 
 	// Get auth info from context
-	ctx := r.Context()
-
-	authInfo, err := navigaid.GetAuth(ctx)
+	authInfo, err := navigaid.GetAuth(r.Context())
 	if err != nil {
 		h.logger.Info("authentication required", "error", err)
 		http.Error(w, "Authentication required", http.StatusUnauthorized)
@@ -102,15 +154,17 @@ func (h *PathPermissionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	// Check org permissions
-	if missing := matchedConfig.missingPermission(authInfo.Claims); missing != "" {
-		h.logger.Info("permission denied",
-			"path", path,
-			"permission", missing,
-			"user", authInfo.Claims.Subject,
-			"org", authInfo.Claims.Org)
-		http.Error(w, "Permission denied", http.StatusForbidden)
+	for _, cfg := range matched {
+		if missing := cfg.missingPermission(authInfo.Claims); missing != "" {
+			h.logger.Info("permission denied",
+				"path", path,
+				"permission", missing,
+				"user", authInfo.Claims.Subject,
+				"org", authInfo.Claims.Org)
+			http.Error(w, "Permission denied", http.StatusForbidden)
 
-		return
+			return
+		}
 	}
 
 	// All permissions passed, serve the request
@@ -165,9 +219,9 @@ func WithPathPermissionService(
 	return func(a *App) {
 		// Create the handler with path-specific permissions
 		permHandler := &PathPermissionHandler{
-			handler:        handler,
-			logger:         a.logger,
-			configurations: configs,
+			handler: handler,
+			logger:  a.logger,
+			matcher: newPathMatcher(configs),
 		}
 
 		// Authenticate before permission checks.
@@ -189,7 +243,8 @@ func WithPathPermissionService(
 // Use this at handler creation time with connect.WithInterceptors.
 //
 // The interceptor checks the RPC method path against configured prefixes and
-// enforces the specified permissions. If no matching configuration is found,
+// enforces the specified permissions, for unary calls and streaming handlers
+// alike. If no matching configuration is found,
 // the request proceeds without additional permission checks.
 //
 // Important: Always apply AuthInterceptors before PathInterceptors to ensure
@@ -230,41 +285,40 @@ func WithPathPermissionService(
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
 func PathInterceptors(logger *slog.Logger, configs []PathPermissionConfig) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Get the request path
-			path := req.Spec().Procedure
+	matcher := newPathMatcher(configs)
 
-			// Find the most specific matching path configuration
-			matchedConfig := matchPathConfig(configs, path)
+	return checkinterceptor.New(func(ctx context.Context, path string, _ http.Header) (context.Context, error) {
+		// Find the most specific matching path configuration. The
+		// procedure comes from the handler's own spec, not from the
+		// client, so it needs no cleaning.
+		matchedConfig := matcher.match(path)
 
-			// If no matching configuration, just pass through to the handler
-			if matchedConfig == nil {
-				return next(ctx, req)
-			}
-
-			// Get auth info from context
-			authInfo, err := navigaid.GetAuth(ctx)
-			if err != nil {
-				logger.Info("authentication required", "error", err)
-
-				return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
-			}
-
-			// Check org permissions
-			if missing := matchedConfig.missingPermission(authInfo.Claims); missing != "" {
-				logger.Info("permission denied",
-					"path", path,
-					"permission", missing,
-					"user", authInfo.Claims.Subject,
-					"org", authInfo.Claims.Org)
-
-				return nil, connect.NewError(connect.CodePermissionDenied,
-					errors.New("missing required permission: "+missing))
-			}
-
-			// All permissions passed, continue with the request
-			return next(ctx, req)
+		// If no matching configuration, just pass through to the handler
+		if matchedConfig == nil {
+			return ctx, nil
 		}
+
+		// Get auth info from context
+		authInfo, err := navigaid.GetAuth(ctx)
+		if err != nil {
+			logger.Info("authentication required", "error", err)
+
+			return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		}
+
+		// Check org permissions
+		if missing := matchedConfig.missingPermission(authInfo.Claims); missing != "" {
+			logger.Info("permission denied",
+				"path", path,
+				"permission", missing,
+				"user", authInfo.Claims.Subject,
+				"org", authInfo.Claims.Org)
+
+			return ctx, connect.NewError(connect.CodePermissionDenied,
+				errors.New("missing required permission: "+missing))
+		}
+
+		// All permissions passed, continue with the request
+		return ctx, nil
 	})
 }

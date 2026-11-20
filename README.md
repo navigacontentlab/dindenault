@@ -102,7 +102,7 @@ only if all of the following hold:
 - The token's `alg` matches the algorithm declared for that key
 - Not expired — the `exp` claim is **required**; `nbf`/`iat` are honored when present
 - The Naviga token type (`ntt` claim) matches (`access_token`)
-- Issuer and audience match, **if** configured via `navigaid.WithExpectedIssuer` / `navigaid.WithExpectedAudience` (opt-in — enable these where possible)
+- Issuer and audience match, **if** configured via `navigaid.WithExpectedIssuer` / `navigaid.WithExpectedAudience` (opt-in — enable these where possible; pass them to `AuthInterceptors` or build the JWKS for `WithMCPAuthJWKS`)
 
 JWKS keys are cached (10 min TTL). If a refresh fails, previously
 fetched keys are used and the fetch retried after 30 s, so a brief IMAS
@@ -115,6 +115,13 @@ Misconfiguration fails at startup, not silently at runtime: an empty
 IMAS URL panics, and app-level interceptors that cannot be applied to a
 handler panic (see [Interceptor Architecture](#interceptor-architecture)).
 A service that starts is a service whose auth is wired up.
+
+The Connect auth and permission interceptors (`AuthInterceptors`,
+`PathInterceptors`, `navigaid.RequirePermission`,
+`navigaid.RequireUnitPermission`) check unary and streaming RPCs alike.
+`navigaid.NewHTTPClient` and `mcp.NewHTTPClient` forward the caller's token
+only to the scheme and host a request starts with, never across a redirect
+to another host.
 
 ### What you are responsible for
 

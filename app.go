@@ -121,6 +121,10 @@ type App struct {
 	corsOptions        *cors.Options
 	prepareOnce        sync.Once
 
+	// routePaths holds the lowercased Path of each registration, in the
+	// order of registrations after prepareHandlers has sorted them.
+	routePaths []string
+
 	// mcpInfo is applied to every server in mcpServers once all options have
 	// run, so WithMCPServerInfo works regardless of option order.
 	mcpInfo    mcp.ServerInfo
@@ -177,15 +181,6 @@ func New(logger *slog.Logger, options ...Option) *App {
 	}
 
 	return app
-}
-
-// pathMatches checks if a request path matches a registered service path.
-func (a *App) pathMatches(requestPath, servicePath string) bool {
-	// Case-insensitive path prefix matching
-	return strings.HasPrefix(
-		strings.ToLower(requestPath),
-		strings.ToLower(servicePath),
-	)
 }
 
 // prepareHandlers applies interceptors and CORS to all handlers and
@@ -253,38 +248,57 @@ func (a *App) prepareHandlers() {
 
 			a.registrations[i].Handler = handler
 		}
+
+		a.routePaths = make([]string, len(a.registrations))
+		for i, reg := range a.registrations {
+			a.routePaths[i] = strings.ToLower(reg.Path)
+		}
 	})
 }
 
-// processRequest handles an HTTP request and returns the result.
-// The context is currently unused but may be needed for future extensions.
-func (a *App) processRequest(_ context.Context, req *http.Request, path string) (*lambda.Response, error) {
-	a.logger.Debug("GeneratedHTTPRequest",
-		"Method", req.Method,
-		"host", req.Host,
-		"URI", req.RequestURI,
-		"Headers", redactHeaders(req.Header),
-	)
+// processRequest routes an HTTP request to the most specific matching
+// registration and returns its response.
+//
+// Routing uses the decoded request path (req.URL.Path), the same path the
+// handlers see, so a percent-encoded path such as "/%61dmin/" reaches the
+// registration for "/admin/" rather than a less specific one. Matching is
+// case-insensitive on the path prefix.
+func (a *App) processRequest(ctx context.Context, req *http.Request) (*lambda.Response, error) {
+	debug := a.logger.Enabled(ctx, slog.LevelDebug)
 
+	// Built only when debug logging is on: redactHeaders clones the headers.
+	if debug {
+		a.logger.DebugContext(ctx, "GeneratedHTTPRequest",
+			"Method", req.Method,
+			"host", req.Host,
+			"URI", req.RequestURI,
+			"Headers", redactHeaders(req.Header),
+		)
+	}
+
+	path := strings.ToLower(req.URL.Path)
 	w := lambda.NewProxyResponseWriter()
 
 	// Registrations are sorted by path specificity in prepareHandlers.
-	// Find and execute handler.
-	for _, reg := range a.registrations {
-		a.logger.Debug("Handle:", "reg.Path", reg.Path)
-
-		if a.pathMatches(path, reg.Path) {
-			reg.Handler.ServeHTTP(w, req)
-
-			resp, err := w.GetLambdaResponse()
-			if err != nil {
-				a.logger.Error("Failed to get lambda response", "error", err)
-
-				return nil, fmt.Errorf("failed to get lambda response: %w", err)
-			}
-
-			return &resp, nil
+	for i, reg := range a.registrations {
+		if !strings.HasPrefix(path, a.routePaths[i]) {
+			continue
 		}
+
+		if debug {
+			a.logger.DebugContext(ctx, "Handle:", "reg.Path", reg.Path)
+		}
+
+		reg.Handler.ServeHTTP(w, req)
+
+		resp, err := w.GetLambdaResponse()
+		if err != nil {
+			a.logger.Error("Failed to get lambda response", "error", err)
+
+			return nil, fmt.Errorf("failed to get lambda response: %w", err)
+		}
+
+		return &resp, nil
 	}
 
 	return textResponse(http.StatusNotFound, notFoundBody), nil
@@ -300,7 +314,7 @@ func (a *App) serve(ctx context.Context, request lambda.Request) *lambda.Respons
 		return textResponse(http.StatusInternalServerError, internalServerErrorBody)
 	}
 
-	resp, err := a.processRequest(ctx, req, request.Path)
+	resp, err := a.processRequest(ctx, req)
 	if err != nil {
 		a.logger.Error("Failed to process request", "error", err)
 

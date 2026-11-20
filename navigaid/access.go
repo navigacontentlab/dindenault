@@ -33,8 +33,8 @@ type AccessTokenService struct {
 	tokenEndpoint string
 }
 
-// New creates a new access token service with given options.
-func New(tokenEndpoint string, options ...AccessTokenServiceOption) *AccessTokenService {
+// NewAccessTokenService creates a new access token service with given options.
+func NewAccessTokenService(tokenEndpoint string, options ...AccessTokenServiceOption) *AccessTokenService {
 	ats := AccessTokenService{
 		tokenEndpoint: tokenEndpoint,
 	}
@@ -50,6 +50,14 @@ func New(tokenEndpoint string, options ...AccessTokenServiceOption) *AccessToken
 	return &ats
 }
 
+// New creates a new access token service with given options.
+//
+// Deprecated: use NewAccessTokenService; navigaid has several types, and New
+// does not say which one it makes.
+func New(tokenEndpoint string, options ...AccessTokenServiceOption) *AccessTokenService {
+	return NewAccessTokenService(tokenEndpoint, options...)
+}
+
 // AccessTokenResponse is the response retrieved from navigaID.
 type AccessTokenResponse struct {
 	AccessToken string `json:"access_token"`
@@ -59,16 +67,16 @@ type AccessTokenResponse struct {
 
 // NewAccessToken takes an navigaID token and returns an access token.
 func (ats *AccessTokenService) NewAccessToken(navigaIDToken string) (*AccessTokenResponse, error) {
-	req, err := http.NewRequest("POST", ats.tokenEndpoint, strings.NewReader(""))
+	req, err := http.NewRequest(http.MethodPost, ats.tokenEndpoint, strings.NewReader(""))
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("create token request: %w", err)
 	}
 
 	req.Header.Add("Authorization", "Bearer "+navigaIDToken)
 
 	res, err := ats.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("request access token: %w", err)
 	}
 
 	defer func() {
@@ -81,14 +89,14 @@ func (ats *AccessTokenService) NewAccessToken(navigaIDToken string) (*AccessToke
 
 	bytes, err := io.ReadAll(io.LimitReader(res.Body, maxTokenResponseBytes))
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("read token response: %w", err)
 	}
 
 	var atr AccessTokenResponse
 	err = json.Unmarshal(bytes, &atr)
 
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("decode token response: %w", err)
 	}
 
 	if atr.AccessToken == "" {
@@ -102,13 +110,18 @@ func (ats *AccessTokenService) NewAccessToken(navigaIDToken string) (*AccessToke
 // are willing to read.
 const maxTokenResponseBytes = 1 << 20 // 1 MiB
 
-// ErrNoToken is used to communicate that no bearer token was included
+// NoTokenError is used to communicate that no bearer token was included
 // in the request.
-type ErrNoToken struct{}
+type NoTokenError struct{}
 
-func (err ErrNoToken) Error() string {
+func (NoTokenError) Error() string {
 	return "no token found"
 }
+
+// ErrNoToken is the old name of NoTokenError.
+//
+// Deprecated: use NoTokenError. The Err prefix is for error values, not types.
+type ErrNoToken = NoTokenError
 
 // GetAuthToken extracts the bearer token from the Authorization header.
 func GetAuthToken(header http.Header) (string, error) {
@@ -116,11 +129,11 @@ func GetAuthToken(header http.Header) (string, error) {
 
 	authType, token, _ := strings.Cut(auth, " ")
 	if token == "" {
-		return "", ErrNoToken{}
+		return "", NoTokenError{}
 	}
 
 	if strings.ToLower(authType) != "bearer" {
-		return "", ErrNoToken{}
+		return "", NoTokenError{}
 	}
 
 	return token, nil

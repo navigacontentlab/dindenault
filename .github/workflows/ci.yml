@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25.x']
+        go-version: ['1.26.x']
 
     steps:
       - name: Checkout code
@@ -50,13 +50,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           cache: true
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: v2.8.0
+          version: v2.12.0
           args: --timeout=5m
 
   test-otel:
@@ -70,7 +70,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           cache: true
 
       - name: Test otel module
@@ -90,7 +90,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           cache: true
 
       - name: Test xray module
@@ -102,13 +102,6 @@ jobs:
   govulncheck:
     name: govulncheck (${{ matrix.module }})
     runs-on: ubuntu-latest
-    # Non-blocking until we move to Go 1.26. GO-2026-6603..6617 (net/http,
-    # net/textproto, crypto/tls) are in the Go standard library and are fixed
-    # only in go1.26.9 / go1.27.2 — there is no go1.25.x fix, so nothing in this
-    # repo can clear them. The job still runs and its findings stay visible in
-    # the log. When go-version and govulncheck below are bumped to Go 1.26 /
-    # govulncheck v1.8.0, remove this line so the job blocks again.
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -121,13 +114,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           cache: true
 
       # Fails only when our code reaches a vulnerable symbol. Module-level
       # findings without a call path (e.g. aws-sdk-go v1 via aws-xray-sdk-go)
       # are reported but don't fail the build.
-      # govulncheck v1.8.0+ requires Go 1.26; keep in step with go-version above.
       - name: Run govulncheck
         working-directory: ${{ matrix.module }}
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...

@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- `navigaid.ConnectInterceptor` (and so `AuthInterceptors`), `PathInterceptors`,
+  `navigaid.RequirePermission` and `navigaid.RequireUnitPermission` now also
+  check streaming RPCs (server, client and bidi streaming). They were built on
+  `connect.UnaryInterceptorFunc`, which passes streaming handlers through
+  untouched, so a streaming RPC ran without authentication or permission
+  checks. Unary calls behave as before.
+- `navigaid.NewHTTPClient` and `mcp.NewHTTPClient` no longer send the caller's
+  token on a redirect to another scheme, host or port than the request started
+  with. The transport used to put the token back on every hop, undoing the
+  `http.Client` rule that drops `Authorization` on such redirects. Without
+  auth in the context they no longer overwrite an `Authorization` header the
+  caller set themselves.
+- `WithPathPermissionService` checks a path with `..`, `.` or repeated
+  slashes against the rules for both the path as received and its cleaned
+  form, and requires both. `/api/users/../admin` no longer passes on the
+  strength of a `/api/users` rule.
+- The App routes on the decoded request path, the one the handlers see. An
+  encoded path such as `/%61dmin/` used to skip the `/admin/` registration and
+  reach a less specific one.
+- `mcp.AuthMiddleware` reads at most `mcp.MaxRequestBytes` (10 MiB) and answers
+  413 above that. Lambda's own limits are lower, so Lambda services see no
+  change.
+
+### Added
+- `AuthInterceptors` takes optional `navigaid.JWKSOption`s, e.g.
+  `navigaid.WithExpectedIssuer` or `navigaid.WithExpectedAudience`.
+- `WithMCPAuthJWKS`: `WithMCPAuth` with a JWKS you build yourself, for the same
+  issuer and audience checks.
+- `navigaid.NoTokenError` and `navigaid.NewAccessTokenService`.
+
+### Deprecated
+- `navigaid.ErrNoToken` (now an alias of `NoTokenError`) and `navigaid.New`
+  (calls `NewAccessTokenService`). Both keep working.
+
+### Changed
+- **Go 1.26 is required** (`go 1.26.0`, toolchain go1.26.11) for the root,
+  otel and xray modules. Go 1.25 no longer gets security fixes; the standard
+  library issues govulncheck reported (GO-2026-6603 to -6617, -6809, -6859)
+  are fixed only in Go 1.26. Services must build with Go 1.26.11 or later to
+  get those fixes.
+- Dependencies held back for Go 1.25 are upgraded: connect v1.21.1,
+  aws-lambda-go v1.55.1, OpenTelemetry v1.47.0 / contrib v0.72.0 (otel),
+  golang.org/x/net v0.63.0 (otel, xray), plus the rest of each module's
+  dependencies. CI, release and govulncheck (now blocking again, v1.10.0)
+  run on Go 1.26; golangci-lint v2.12.0.
+- Permission checks no longer build a map per call, path prefixes are
+  lowercased once instead of per request, and request debug logging (which
+  copies the headers) only runs when debug logging is on.
+- `mcp.Input.Elicited` documents that answers are not signed and are not a
+  security confirmation.
+- xray: `github.com/andybalholm/brotli` v1.3.0 and
+  `github.com/klauspost/compress` v1.20.4 (fix GO-2026-6888, GO-2026-6865).
+
 ## [1.13.0] - 2026-11-19
 
 ### Added

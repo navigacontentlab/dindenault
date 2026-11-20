@@ -4,59 +4,61 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"connectrpc.com/connect"
+
+	"github.com/navigacontentlab/dindenault/internal/checkinterceptor"
 )
 
 // ConnectInterceptor returns an interceptor for Connect RPC
 // that adds authentication to requests.
 //
+// It authenticates unary calls and streaming handlers (server, client and
+// bidi streaming) alike; a stream is checked once, against the headers the
+// client sent when opening it.
+//
 //nolint:ireturn
 func ConnectInterceptor(logger *slog.Logger, jwks *JWKS) connect.Interceptor {
 	logger.Debug("Creating Connect interceptor for authentication")
 
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Try to extract token from multiple possible headers
-			accessToken := extractAccessToken(req)
+	return checkinterceptor.New(func(ctx context.Context, _ string, header http.Header) (context.Context, error) {
+		// Try to extract token from multiple possible headers
+		accessToken := extractAccessToken(header)
 
-			if accessToken == "" {
-				logger.Info("no access token in request")
+		if accessToken == "" {
+			logger.Info("no access token in request")
 
-				return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
-			}
-
-			// Validate the token
-			claims, err := jwks.Validate(accessToken)
-			if err != nil {
-				logger.Error("token validation failed", "error", err)
-
-				return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token"))
-			}
-
-			// Set auth info in context
-			newCtx := SetAuth(ctx, AuthInfo{
-				AccessToken: accessToken,
-				Claims:      claims,
-			}, nil)
-
-			// Call the next handler with the authenticated context
-			return next(newCtx, req)
+			return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 		}
+
+		// Validate the token
+		claims, err := jwks.Validate(accessToken)
+		if err != nil {
+			logger.Error("token validation failed", "error", err)
+
+			return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token"))
+		}
+
+		// Set auth info in context
+		return SetAuth(ctx, AuthInfo{
+			AccessToken: accessToken,
+			Claims:      claims,
+		}, nil), nil
 	})
 }
 
 // extractAccessToken tries to extract the access token from various headers
 // to maintain compatibility with panurge.
-func extractAccessToken(req connect.AnyRequest) string {
+func extractAccessToken(header http.Header) string {
 	// First try Authorization header (standard)
-	authHeader := req.Header().Get("Authorization")
+	authHeader := header.Get("Authorization")
 	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
 		return strings.TrimPrefix(authHeader, "Bearer ")
 	}
 
-	imidToken := req.Header().Get("x-imid-token")
+	imidToken := header.Get("x-imid-token")
 	if imidToken != "" {
 		return imidToken
 	}
@@ -65,28 +67,27 @@ func extractAccessToken(req connect.AnyRequest) string {
 }
 
 // RequirePermission returns an interceptor that checks
-// if the user has the specified permission.
+// if the user has the specified permission. Like ConnectInterceptor, it
+// covers unary calls and streaming handlers.
 //
 //nolint:ireturn
 func RequirePermission(logger *slog.Logger, permission string) connect.Interceptor {
 	logger.Debug("Creating Connect interceptor for permission", "permission", permission)
 
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Check if the user has the required permission
-			if err := CheckPermissionConnect(ctx, logger, permission); err != nil {
-				return nil, connect.NewError(connect.CodePermissionDenied,
-					errors.New("missing required permission: "+permission))
-			}
-
-			// Call the next handler
-			return next(ctx, req)
+	return checkinterceptor.New(func(ctx context.Context, _ string, _ http.Header) (context.Context, error) {
+		// Check if the user has the required permission
+		if err := CheckPermissionConnect(ctx, logger, permission); err != nil {
+			return ctx, connect.NewError(connect.CodePermissionDenied,
+				errors.New("missing required permission: "+permission))
 		}
+
+		return ctx, nil
 	})
 }
 
 // RequireUnitPermission returns an interceptor that checks
-// if the user has the specified permission for a unit.
+// if the user has the specified permission for a unit. Like
+// ConnectInterceptor, it covers unary calls and streaming handlers.
 //
 //nolint:ireturn
 func RequireUnitPermission(logger *slog.Logger, unit string, permission string) connect.Interceptor {
@@ -94,17 +95,14 @@ func RequireUnitPermission(logger *slog.Logger, unit string, permission string) 
 		"unit", unit,
 		"permission", permission)
 
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Check if the user has the required permission for the unit
-			if err := CheckUnitPermissionConnect(ctx, logger, unit, permission); err != nil {
-				return nil, connect.NewError(connect.CodePermissionDenied,
-					errors.New("missing required permission for unit: "+unit+"/"+permission))
-			}
-
-			// Call the next handler
-			return next(ctx, req)
+	return checkinterceptor.New(func(ctx context.Context, _ string, _ http.Header) (context.Context, error) {
+		// Check if the user has the required permission for the unit
+		if err := CheckUnitPermissionConnect(ctx, logger, unit, permission); err != nil {
+			return ctx, connect.NewError(connect.CodePermissionDenied,
+				errors.New("missing required permission for unit: "+unit+"/"+permission))
 		}
+
+		return ctx, nil
 	})
 }
 
