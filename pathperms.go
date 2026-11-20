@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/navigacontentlab/dindenault/internal/checkinterceptor"
 	"github.com/navigacontentlab/dindenault/navigaid"
 )
 
@@ -189,7 +190,8 @@ func WithPathPermissionService(
 // Use this at handler creation time with connect.WithInterceptors.
 //
 // The interceptor checks the RPC method path against configured prefixes and
-// enforces the specified permissions. If no matching configuration is found,
+// enforces the specified permissions, for unary calls and streaming handlers
+// alike. If no matching configuration is found,
 // the request proceeds without additional permission checks.
 //
 // Important: Always apply AuthInterceptors before PathInterceptors to ensure
@@ -230,41 +232,36 @@ func WithPathPermissionService(
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
 func PathInterceptors(logger *slog.Logger, configs []PathPermissionConfig) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Get the request path
-			path := req.Spec().Procedure
+	return checkinterceptor.New(func(ctx context.Context, path string, _ http.Header) (context.Context, error) {
+		// Find the most specific matching path configuration
+		matchedConfig := matchPathConfig(configs, path)
 
-			// Find the most specific matching path configuration
-			matchedConfig := matchPathConfig(configs, path)
-
-			// If no matching configuration, just pass through to the handler
-			if matchedConfig == nil {
-				return next(ctx, req)
-			}
-
-			// Get auth info from context
-			authInfo, err := navigaid.GetAuth(ctx)
-			if err != nil {
-				logger.Info("authentication required", "error", err)
-
-				return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
-			}
-
-			// Check org permissions
-			if missing := matchedConfig.missingPermission(authInfo.Claims); missing != "" {
-				logger.Info("permission denied",
-					"path", path,
-					"permission", missing,
-					"user", authInfo.Claims.Subject,
-					"org", authInfo.Claims.Org)
-
-				return nil, connect.NewError(connect.CodePermissionDenied,
-					errors.New("missing required permission: "+missing))
-			}
-
-			// All permissions passed, continue with the request
-			return next(ctx, req)
+		// If no matching configuration, just pass through to the handler
+		if matchedConfig == nil {
+			return ctx, nil
 		}
+
+		// Get auth info from context
+		authInfo, err := navigaid.GetAuth(ctx)
+		if err != nil {
+			logger.Info("authentication required", "error", err)
+
+			return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		}
+
+		// Check org permissions
+		if missing := matchedConfig.missingPermission(authInfo.Claims); missing != "" {
+			logger.Info("permission denied",
+				"path", path,
+				"permission", missing,
+				"user", authInfo.Claims.Subject,
+				"org", authInfo.Claims.Org)
+
+			return ctx, connect.NewError(connect.CodePermissionDenied,
+				errors.New("missing required permission: "+missing))
+		}
+
+		// All permissions passed, continue with the request
+		return ctx, nil
 	})
 }
