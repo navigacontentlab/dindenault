@@ -58,7 +58,10 @@ release:
 	@if [ "$(MODULE)" = "root" ]; then \
 		LATEST_ROOT=$$(git tag -l "v*" | sort -V | tail -n1); \
 		echo "🔁 Auto-bumping submodules to $$LATEST_ROOT"; \
-		GOPROXY=direct GOSUMDB=off $(MAKE) bump-submodules VERSION="$$LATEST_ROOT"; \
+		# The new tag is not in the proxy or sum.golang.org yet, so fetch it \
+		# directly and skip the checksum database for this module only: \
+		# GOSUMDB=off would also block go1.26 toolchain downloads. \
+		GOPROXY=direct GONOSUMDB=github.com/navigacontentlab/dindenault $(MAKE) bump-submodules VERSION="$$LATEST_ROOT"; \
 	fi
 
 # Point the otel/xray submodules at a released root version and re-tidy.
