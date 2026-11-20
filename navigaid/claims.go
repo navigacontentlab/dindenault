@@ -1,6 +1,8 @@
 package navigaid
 
 import (
+	"slices"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -25,10 +27,8 @@ type Claims struct {
 // HasPermissionsInUnit checks if the holder has a set of permissions
 // in a unit, either directly, or inherited from the organisation.
 func (c Claims) HasPermissionsInUnit(unit string, permissions ...string) bool {
-	perms := c.Permissions.PermissionsInUnit(unit)
-
 	for _, p := range permissions {
-		if !perms[p] {
+		if !c.Permissions.hasInUnit(unit, p) {
 			return false
 		}
 	}
@@ -39,10 +39,8 @@ func (c Claims) HasPermissionsInUnit(unit string, permissions ...string) bool {
 // HasPermissionsInOrganisation checks if the holder has a set of permissions
 // in the organisation.
 func (c Claims) HasPermissionsInOrganisation(permissions ...string) bool {
-	perms := c.Permissions.PermissionsInOrganisation()
-
 	for _, p := range permissions {
-		if !perms[p] {
+		if !slices.Contains(c.Permissions.Org, p) {
 			return false
 		}
 	}
@@ -54,30 +52,18 @@ func (c Claims) HasPermissionsInOrganisation(permissions ...string) bool {
 // given permissions in a unit, either directly, or inherited from the
 // organisation. It returns false when no permissions are given.
 func (c Claims) HasAnyPermissionInUnit(unit string, permissions ...string) bool {
-	perms := c.Permissions.PermissionsInUnit(unit)
-
-	for _, p := range permissions {
-		if perms[p] {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(permissions, func(p string) bool {
+		return c.Permissions.hasInUnit(unit, p)
+	})
 }
 
 // HasAnyPermissionInOrganisation checks if the holder has at least one
 // of the given permissions in the organisation. It returns false when
 // no permissions are given.
 func (c Claims) HasAnyPermissionInOrganisation(permissions ...string) bool {
-	perms := c.Permissions.PermissionsInOrganisation()
-
-	for _, p := range permissions {
-		if perms[p] {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(permissions, func(p string) bool {
+		return slices.Contains(c.Permissions.Org, p)
+	})
 }
 
 // Userinfo contains name and similar data.
@@ -93,6 +79,13 @@ type Userinfo struct {
 type PermissionsClaim struct {
 	Units map[string][]string `json:"units"`
 	Org   []string            `json:"org"`
+}
+
+// hasInUnit reports whether permission is granted in unit, directly or
+// through the organisation. The permission lists in a token are short, so a
+// linear scan beats building a set on every check.
+func (p PermissionsClaim) hasInUnit(unit, permission string) bool {
+	return slices.Contains(p.Org, permission) || slices.Contains(p.Units[unit], permission)
 }
 
 // PermissionsInOrganisation returns the permissions the holder has in the
