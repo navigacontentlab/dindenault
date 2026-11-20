@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-20
+
 ### Security
 - `navigaid.ConnectInterceptor` (and so `AuthInterceptors`), `PathInterceptors`,
   `navigaid.RequirePermission` and `navigaid.RequireUnitPermission` now also
@@ -413,7 +415,8 @@ When creating a release:
 
 ### Version Links
 
-[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/navigacontentlab/dindenault/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.14.0
 [1.13.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.13.0
 [1.12.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.12.0
 [1.11.0]: https://github.com/navigacontentlab/dindenault/releases/tag/v1.11.0
