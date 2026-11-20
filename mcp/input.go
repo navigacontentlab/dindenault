@@ -158,6 +158,10 @@ func (in Input) State(v any) error {
 
 // Elicited returns the client's answer to the elicitation sent under key, and
 // false when there is none or it cannot be read.
+//
+// The answers are what the client sends; unlike the requestState they are not
+// signed. An answer shows what the caller chose, not that a person saw the
+// question, so it is not a security confirmation on its own.
 func (in Input) Elicited(key string) (ElicitResult, bool) {
 	raw, ok := in.responses[key]
 	if !ok {

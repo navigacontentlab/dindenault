@@ -118,9 +118,15 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
+		body, err := io.ReadAll(io.LimitReader(r.Body, MaxRequestBytes+1))
 		if err != nil {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
+
+			return
+		}
+
+		if len(body) > MaxRequestBytes {
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
 
 			return
 		}
@@ -202,6 +208,11 @@ func AuthMiddleware(logger *slog.Logger, jwks *navigaid.JWKS, next http.Handler,
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// MaxRequestBytes is the largest request body AuthMiddleware reads. It is
+// above what Lambda accepts (1 MB behind an ALB, 6 MB from API Gateway), so it
+// only matters when the middleware runs outside Lambda.
+const MaxRequestBytes = 10 << 20
 
 // challenge is the WWW-Authenticate value of a 401 (RFC 6750, RFC 9728).
 func challenge(metadataURL, errCode string) string {

@@ -229,3 +229,22 @@ func TestAuthMiddleware_Integration_BothContextValuesAvailable(t *testing.T) {
 	assert.Equal(t, org, gotOrg, "navigaid.GetAuth should return validated claims")
 	assert.Equal(t, token, gotRawToken, "mcp.AuthorizationFromContext should return raw token for forwarding to OC/CCA")
 }
+
+func TestAuthMiddleware_OversizedBody_Returns413(t *testing.T) {
+	var called bool
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	body := strings.Repeat(" ", mcp.MaxRequestBytes+1)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer token")
+
+	rr := httptest.NewRecorder()
+	mcp.AuthMiddleware(discardLogger(), validJWKS(), next).ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
+	assert.False(t, called)
+}
