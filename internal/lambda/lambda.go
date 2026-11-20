@@ -103,9 +103,9 @@ type Response struct {
 
 // AWSRequestToHTTPRequest converts an AWS Lambda request to a standard HTTP request.
 func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request, error) {
-	HTTPMethod := event.HTTPMethod
+	method := event.HTTPMethod
 	if event.Version == apiGatewayV2 {
-		HTTPMethod = event.RequestContext.HTTP.Method
+		method = event.RequestContext.HTTP.Method
 	}
 
 	// ALB passes query parameters as the client sent them, still
@@ -160,9 +160,9 @@ func AWSRequestToHTTPRequest(ctx context.Context, event Request) (*http.Request,
 		body = base64.NewDecoder(base64.StdEncoding, body)
 	}
 
-	req, err := http.NewRequest(HTTPMethod, u.String(), body)
+	req, err := http.NewRequest(method, u.String(), body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request for method %s and URL %s: %w", HTTPMethod, u.String(), err)
+		return nil, fmt.Errorf("failed to create HTTP request for method %s and URL %s: %w", method, u.String(), err)
 	}
 
 	req.RequestURI = u.RequestURI()

@@ -64,7 +64,7 @@ func (p *Provider) Interceptor(logger *slog.Logger, opts dindenault.TelemetryOpt
 // InstrumentHandler implements dindenault.TelemetryProvider.
 // Lambda's runtime sets up the X-Ray root segment automatically when active
 // tracing is enabled on the function, so no additional wrapping is needed.
-func (p *Provider) InstrumentHandler(handler interface{}) interface{} {
+func (p *Provider) InstrumentHandler(handler any) any {
 	return handler
 }
 

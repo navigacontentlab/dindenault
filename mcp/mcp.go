@@ -136,7 +136,7 @@ const (
 	methodInitialize = "initialize"
 	methodPing       = "ping"
 	methodDiscover   = "server/discover"
-	methodList       = "tools/list"
+	methodToolsList  = "tools/list"
 
 	// codePermissionDenied is in the JSON-RPC implementation-defined
 	// server error range (-32000 to -32099).
@@ -380,7 +380,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleInitialize(w, &req)
 	case methodPing:
 		writeResult(w, req.ID, struct{}{})
-	case methodList:
+	case methodToolsList:
 		s.handleToolsList(w, &req, false)
 	case methodToolsCall:
 		s.handleToolsCall(ctx, w, &req, false)
@@ -407,7 +407,7 @@ func (s *Server) serveModern(
 	switch req.Method {
 	case methodDiscover:
 		s.handleDiscover(w, req)
-	case methodList:
+	case methodToolsList:
 		s.handleToolsList(w, req, true)
 	case methodToolsCall:
 		s.handleToolsCall(ctx, w, req, true)

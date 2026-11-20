@@ -174,3 +174,13 @@ func TestNewHTTPClient_NoAuth_KeepsCallerHeader(t *testing.T) {
 
 	assert.Equal(t, "Bearer own-token", got, "without auth in ctx the caller's own header is left alone")
 }
+
+func TestGetAuthToken_NoTokenErrorAndDeprecatedAlias(t *testing.T) {
+	_, err := navigaid.GetAuthToken(http.Header{})
+
+	var noToken navigaid.NoTokenError
+	require.ErrorAs(t, err, &noToken)
+
+	var old navigaid.ErrNoToken // the deprecated name must keep working
+	require.ErrorAs(t, err, &old)
+}

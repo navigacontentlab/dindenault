@@ -23,7 +23,7 @@ type cachedToken struct {
 // NewTokenRefresher creates a new token refresher.
 func NewTokenRefresher(logger *slog.Logger, tokenEndpoint string) *TokenRefresher {
 	return &TokenRefresher{
-		service:    New(tokenEndpoint),
+		service:    NewAccessTokenService(tokenEndpoint),
 		logger:     logger,
 		tokenCache: make(map[string]*cachedToken),
 	}

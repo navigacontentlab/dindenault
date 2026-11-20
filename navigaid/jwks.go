@@ -43,7 +43,7 @@ type JWKS struct {
 	expectedIssuer   string
 	expectedAudience string
 
-	m              sync.Mutex
+	mu             sync.Mutex
 	jwksStaleAfter time.Time
 	jwks           *jwksResponse
 
@@ -116,7 +116,7 @@ func (j *JWKS) fetchJWKS() (*jwksResponse, error) {
 
 	res, err := j.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("fetch jwks: %w", err)
 	}
 
 	defer func() {
@@ -140,8 +140,8 @@ func (j *JWKS) fetchJWKS() (*jwksResponse, error) {
 }
 
 func (j *JWKS) getKey(kid string) (*jwksKey, error) {
-	j.m.Lock()
-	defer j.m.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 
 	// ensure up-to-date version of our jwks
 	if time.Now().After(j.jwksStaleAfter) {
@@ -209,7 +209,7 @@ func (j *JWKS) ValidateToken(token string, tokenType string) (Claims, error) {
 		parserOpts = append(parserOpts, jwt.WithAudience(j.expectedAudience))
 	}
 
-	t, err := jwt.ParseWithClaims(token, &claims, func(token *jwt.Token) (interface{}, error) {
+	t, err := jwt.ParseWithClaims(token, &claims, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -255,10 +255,10 @@ type jwksKey struct {
 	E   string `json:"e"`
 }
 
-func (j *jwksKey) nAsBigInt() (*big.Int, error) {
-	data, err := base64.RawURLEncoding.DecodeString(j.N)
+func (k *jwksKey) nAsBigInt() (*big.Int, error) {
+	data, err := base64.RawURLEncoding.DecodeString(k.N)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("decode jwk modulus: %w", err)
 	}
 
 	n := big.NewInt(0)
@@ -267,15 +267,15 @@ func (j *jwksKey) nAsBigInt() (*big.Int, error) {
 	return n, nil
 }
 
-func (j *jwksKey) publicKey() (*rsa.PublicKey, error) {
+func (k *jwksKey) publicKey() (*rsa.PublicKey, error) {
 	var public rsa.PublicKey
 
-	n, err := j.nAsBigInt()
+	n, err := k.nAsBigInt()
 	if err != nil {
 		return nil, err
 	}
 
-	e, err := j.eAsInt()
+	e, err := k.eAsInt()
 	if err != nil {
 		return nil, err
 	}
@@ -286,10 +286,10 @@ func (j *jwksKey) publicKey() (*rsa.PublicKey, error) {
 	return &public, nil
 }
 
-func (j *jwksKey) eAsInt() (int, error) {
-	data, err := base64.RawURLEncoding.DecodeString(j.E)
+func (k *jwksKey) eAsInt() (int, error) {
+	data, err := base64.RawURLEncoding.DecodeString(k.E)
 	if err != nil {
-		return -1, fmt.Errorf("%w", err)
+		return -1, fmt.Errorf("decode jwk exponent: %w", err)
 	}
 
 	var ebytes []byte
@@ -307,7 +307,7 @@ func (j *jwksKey) eAsInt() (int, error) {
 	err = binary.Read(reader, binary.BigEndian, &e)
 
 	if err != nil {
-		return -1, fmt.Errorf("%w", err)
+		return -1, fmt.Errorf("read jwk exponent: %w", err)
 	}
 
 	// Make sure the value fits in an int to avoid overflow

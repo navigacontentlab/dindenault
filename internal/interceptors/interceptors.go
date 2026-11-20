@@ -1,4 +1,4 @@
-// Package interceptors provides Connect RPC interceptors for logging and CORS.
+// Package interceptors provides Connect RPC interceptors for logging.
 package interceptors
 
 import (

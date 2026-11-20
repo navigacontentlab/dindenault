@@ -182,7 +182,7 @@ func (p *Provider) Interceptor(logger *slog.Logger, opts dindenault.TelemetryOpt
 }
 
 // InstrumentHandler implements dindenault.TelemetryProvider.
-func (p *Provider) InstrumentHandler(handler interface{}) interface{} {
+func (p *Provider) InstrumentHandler(handler any) any {
 	// Create and return a wrapper with OpenTelemetry
 	return otellambda.InstrumentHandler(handler)
 }

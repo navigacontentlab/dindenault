@@ -68,7 +68,7 @@ func (r *ProxyResponseWriter) Write(body []byte) (int, error) {
 		r.Header().Add(contentTypeHeaderKey, http.DetectContentType(body))
 	}
 
-	n, err := (&r.body).Write(body)
+	n, err := r.body.Write(body)
 	if err != nil {
 		return n, fmt.Errorf("failed to write response body: %w", err)
 	}
@@ -97,7 +97,7 @@ func (r *ProxyResponseWriter) GetLambdaResponse() (Response, error) {
 
 	isBase64 := false
 
-	bb := (&r.body).Bytes()
+	bb := r.body.Bytes()
 
 	if utf8.Valid(bb) {
 		output = string(bb)
