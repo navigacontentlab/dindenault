@@ -1,6 +1,13 @@
 version: "2"
 
 linters:
+    exclusions:
+        rules:
+            # Repeated literals in tests (tool names, versions, paths) read
+            # better inline than as constants.
+            - path: _test\.go
+              linters:
+                  - goconst
     settings:
         funlen:
             lines: 120
