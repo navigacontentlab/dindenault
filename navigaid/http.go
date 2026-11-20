@@ -48,6 +48,9 @@ func HTTPMiddleware(logger *slog.Logger, jwks *JWKS, next http.Handler) http.Han
 // GetAuth at call time; if no auth info is present the client makes
 // unauthenticated requests.
 //
+// The token is not sent when a redirect leads to another scheme or host than
+// the request started with, so a redirect cannot carry it to a third party.
+//
 // Pass a shared base RoundTripper (e.g. http.DefaultTransport or a cached
 // *http.Transport) to preserve TCP connection pooling across calls. If base
 // is nil, http.DefaultTransport is used.
