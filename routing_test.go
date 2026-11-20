@@ -73,3 +73,9 @@ func TestRoutingUsesDecodedPath(t *testing.T) {
 		})
 	}
 }
+
+func TestWithMCPAuthJWKS_NilPanics(t *testing.T) {
+	assert.Panics(t, func() {
+		dindenault.WithMCPAuthJWKS("/mcp", slog.Default(), nil, nil)
+	})
+}

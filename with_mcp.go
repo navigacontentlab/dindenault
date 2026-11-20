@@ -86,10 +86,26 @@ func WithMCPAuth(path string, logger *slog.Logger, imasURL string, authOpts []mc
 		panic("imasURL cannot be empty for WithMCPAuth")
 	}
 
+	return WithMCPAuthJWKS(path, logger, navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL)), authOpts, tools...)
+}
+
+// WithMCPAuthJWKS is WithMCPAuth with a JWKS built by the caller, for
+// validation settings WithMCPAuth does not take, such as requiring the
+// token's issuer or audience:
+//
+//	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL),
+//	    navigaid.WithExpectedIssuer(issuer))
+//	dindenault.WithMCPAuthJWKS("/mcp", logger, jwks, nil, tools...)
+func WithMCPAuthJWKS(
+	path string, logger *slog.Logger, jwks *navigaid.JWKS, authOpts []mcp.AuthOption, tools ...mcp.Tool,
+) Option {
+	if jwks == nil {
+		panic("jwks cannot be nil for WithMCPAuthJWKS")
+	}
+
 	return func(a *App) {
 		server := mcp.NewServer("dindenault", "1.0.0", tools...)
 		a.mcpServers = append(a.mcpServers, server)
-		jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL))
 		handler := mcp.AuthMiddleware(logger, jwks, server, authOpts...)
 
 		a.registrations = append(a.registrations, Registration{

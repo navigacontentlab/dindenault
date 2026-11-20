@@ -88,18 +88,21 @@ func WithNoopTelemetry() Option {
 }
 
 // AuthInterceptors returns authentication interceptors for Connect RPC.
-// This creates interceptors that handle authentication with Naviga ID.
+// This creates interceptors that handle authentication with Naviga ID, for
+// unary and streaming calls alike.
 //
 // Parameters:
 // - imasURL: The URL of the Naviga ID IMAS service
+// - opts: optional JWKS settings, e.g. navigaid.WithExpectedIssuer or
+// navigaid.WithExpectedAudience to also require those claims
 //
 //nolint:ireturn // Returning interface as intended by connect.Interceptor design
-func AuthInterceptors(logger *slog.Logger, imasURL string) connect.Interceptor {
+func AuthInterceptors(logger *slog.Logger, imasURL string, opts ...navigaid.JWKSOption) connect.Interceptor {
 	if imasURL == "" {
 		panic("imasURL cannot be empty for AuthInterceptors")
 	}
 	// Create JWKS for token validation
-	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL))
+	jwks := navigaid.NewJWKS(navigaid.ImasJWKSEndpoint(imasURL), opts...)
 
 	return navigaid.ConnectInterceptor(logger, jwks)
 }
