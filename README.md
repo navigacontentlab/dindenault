@@ -1112,10 +1112,16 @@ app := dindenault.New(logger,
         Name:        "my-service",
         Version:     version, // e.g. injected with -ldflags
         Description: "Search and edit my content",
+        WebsiteURL:  "https://example.com/my-service",
+        Icons: []mcp.Icon{
+            {Src: "https://example.com/icon.png", MimeType: "image/png", Sizes: []string{"256x256"}},
+        },
     }),
     dindenault.WithMCPAuth("/mcp", logger, imasURL, nil, tools...),
 )
 ```
+
+`WebsiteURL` and `Icons` are the `websiteUrl` and `icons` of spec `2025-11-25`. An icon's `Src` must be an `https:` or `data:` URI that the client can fetch without a token, so serve it outside the `/mcp` auth.
 
 A custom `Name` also becomes the audit event's `service` field, replacing the Lambda function name that is used with the default name. `title` (spec `2025-06-18`) and `description` (spec `2025-11-25`) in `serverInfo` are sent whenever set, whatever protocol version was negotiated; clients ignore fields they do not know.
 

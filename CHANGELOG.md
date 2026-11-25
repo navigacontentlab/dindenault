@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `mcp.ServerInfo` takes `WebsiteURL` and `Icons` (`mcp.Icon`: `src`,
+  `mimeType`, `sizes`, `theme`), sent in `serverInfo` as `websiteUrl` and
+  `icons` (spec 2025-11-25) when set. Clients such as ChatGPT show the icon
+  and website instead of a generic one.
+
 ## [1.14.0] - 2026-11-20
 
 ### Security
