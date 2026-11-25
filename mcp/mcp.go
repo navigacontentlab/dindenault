@@ -43,6 +43,16 @@
 //	    // ...
 //	}
 //
+// # Text and images
+//
+// A Handler's JSON becomes the result's one text block. A tool that also
+// returns an image, a thumbnail for example, sets ContentHandler instead and
+// returns the blocks itself:
+//
+//	ContentHandler: func(ctx context.Context, input json.RawMessage) ([]mcp.Content, error) {
+//	    return []mcp.Content{mcp.TextContent(doc), mcp.ImageContent(thumb, "image/jpeg")}, nil
+//	},
+//
 // # Audit and correlation
 //
 // Every tools/call writes one AuditEvent (see audit.go) — caller org and
@@ -210,8 +220,13 @@ type Tool struct {
 	// security boundary. Leave nil to send none.
 	Annotations *ToolAnnotations
 
-	// Handler is invoked when the tool is called.
+	// Handler is invoked when the tool is called. Its JSON is the result's
+	// one text block.
 	Handler ToolHandler
+
+	// ContentHandler is invoked instead of Handler when set, for a result of
+	// several content blocks, such as text and an image. Set one of the two.
+	ContentHandler ContentHandler
 }
 
 // ToolAnnotations describes a tool's behavior as defined by the MCP spec.
@@ -557,7 +572,7 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		return
 	}
 
-	output, err := tool.Handler(context.WithValue(ctx, inputKey{}, in), args)
+	content, err := tool.call(context.WithValue(ctx, inputKey{}, in), args)
 
 	if ire := (*InputRequiredError)(nil); errors.As(err, &ire) {
 		err = ErrInputNotSupported
@@ -581,17 +596,22 @@ func (s *Server) handleToolsCall(ctx context.Context, w http.ResponseWriter, req
 		// JSON-RPC response with isError=true in the result.
 		writeResult(w, req.ID, toolsCallResult{
 			ResultType: resultType,
-			Content:    []contentItem{{Type: "text", Text: "Error: " + err.Error()}},
+			Content:    []Content{TextContent("Error: " + err.Error())},
 			IsError:    true,
 		})
 
 		return
 	}
 
-	s.emitAudit(ctx, start, tool, params.Name, args, len(output), OutcomeOK, "")
+	size := 0
+	for _, c := range content {
+		size += c.size()
+	}
+
+	s.emitAudit(ctx, start, tool, params.Name, args, size, OutcomeOK, "")
 	writeResult(w, req.ID, toolsCallResult{
 		ResultType: resultType,
-		Content:    []contentItem{{Type: "text", Text: string(output)}},
+		Content:    content,
 	})
 }
 
@@ -743,15 +763,10 @@ type toolsCallParams struct {
 	InputResponses json.RawMessage `json:"inputResponses,omitempty"`
 }
 
-type contentItem struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
 type toolsCallResult struct {
-	ResultType string        `json:"resultType,omitempty"`
-	Content    []contentItem `json:"content"`
-	IsError    bool          `json:"isError,omitempty"`
+	ResultType string    `json:"resultType,omitempty"`
+	Content    []Content `json:"content"`
+	IsError    bool      `json:"isError,omitempty"`
 }
 
 // ── Response helpers ───────────────────────────────────────────────────────────

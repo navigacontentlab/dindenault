@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `mcp.Tool.ContentHandler` returns a tools/call result of several content
+  blocks, built with `mcp.TextContent` and `mcp.ImageContent` (base64,
+  `mimeType`). A tool can send a thumbnail next to its JSON, and clients that
+  show images from tools display it. `Handler` works as before, its JSON as
+  the one text block; when both are set `ContentHandler` is used. A tool with
+  neither now answers with a tool error instead of panicking.
+
 ## [1.15.0] - 2026-11-25
 
 ### Added
