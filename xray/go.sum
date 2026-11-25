@@ -27,8 +27,8 @@ github.com/klauspost/compress v1.20.4 h1:dD0v/bvxtjCBqQu6sx1TNWkalEY5lNTIe+HY9w8
 github.com/klauspost/compress v1.20.4/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/molecule-man/go-brrr v1.3.1 h1:EwaJUzRIlp/dFmIpzq4J17CA5Zi5OHo2vOGmu09hF1w=
 github.com/molecule-man/go-brrr v1.3.1/go.mod h1:7ybW6/7gA3oKY45jOfVNjSJDtrr6ea4tzbsTkjmQDC4=
-github.com/navigacontentlab/dindenault v1.14.0 h1:n6k/sQVOyaG9HF8CIn3vOEEBsez3BRVC+5JBWeqfuF4=
-github.com/navigacontentlab/dindenault v1.14.0/go.mod h1:gQucP/rwnOo9ygohb7VFYpDswJ+obxzNBZ6jXCiu0RE=
+github.com/navigacontentlab/dindenault v1.15.0 h1:gF6E7CXKcZgcD0Ixw9vIXOagUCybh72A9VpFrwYfpoM=
+github.com/navigacontentlab/dindenault v1.15.0/go.mod h1:gQucP/rwnOo9ygohb7VFYpDswJ+obxzNBZ6jXCiu0RE=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
