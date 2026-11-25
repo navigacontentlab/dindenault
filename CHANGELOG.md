@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-25
+
 ### Added
 - `mcp.Tool.ContentHandler` returns a tools/call result of several content
   blocks, built with `mcp.TextContent` and `mcp.ImageContent` (base64,
