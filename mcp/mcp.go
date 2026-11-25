@@ -256,6 +256,8 @@ type Server struct {
 	// title and description are optional; they are only sent when set.
 	title       string
 	description string
+	websiteURL  string
+	icons       []Icon
 	tools       []Tool
 	toolMap     map[string]*Tool
 	audit       AuditSink
@@ -275,6 +277,23 @@ type ServerInfo struct {
 	Title string
 	// Description is an optional one-line summary of what the server does.
 	Description string
+	// WebsiteURL is an optional address of the server's or product's web
+	// page (spec 2025-11-25).
+	WebsiteURL string
+	// Icons are optional icons for clients to show next to the server
+	// (spec 2025-11-25).
+	Icons []Icon
+}
+
+// Icon is an image a client may show for the server, as in the MCP spec:
+// an https: or data: URI, optionally with its MIME type, its sizes
+// ("48x48", "any" for SVG) and the theme it is made for ("light" or
+// "dark").
+type Icon struct {
+	Src      string   `json:"src"`
+	MimeType string   `json:"mimeType,omitempty"`
+	Sizes    []string `json:"sizes,omitempty"`
+	Theme    string   `json:"theme,omitempty"`
 }
 
 // NewServer creates an MCP server with the given identity and tools.
@@ -314,6 +333,14 @@ func (s *Server) WithInfo(info ServerInfo) *Server {
 
 	if info.Description != "" {
 		s.description = info.Description
+	}
+
+	if info.WebsiteURL != "" {
+		s.websiteURL = info.WebsiteURL
+	}
+
+	if len(info.Icons) > 0 {
+		s.icons = append([]Icon(nil), info.Icons...)
 	}
 
 	return s
@@ -434,7 +461,10 @@ func (s *Server) handleInitialize(w http.ResponseWriter, req *jsonRPCRequest) {
 }
 
 func (s *Server) info() serverInfo {
-	return serverInfo{Name: s.name, Version: s.version, Title: s.title, Description: s.description}
+	return serverInfo{
+		Name: s.name, Version: s.version, Title: s.title, Description: s.description,
+		WebsiteURL: s.websiteURL, Icons: s.icons,
+	}
 }
 
 func (s *Server) handleToolsList(w http.ResponseWriter, req *jsonRPCRequest, modern bool) {
@@ -676,14 +706,17 @@ type serverCapabilities struct {
 type toolsCapability struct{}
 
 // serverInfo is the MCP Implementation object. title arrived in the
-// 2025-06-18 spec and description in 2025-11-25 (to match the MCP registry's
-// server.json); they are sent whenever set, whatever version was negotiated,
-// and clients ignore fields they do not know. Omitted unless set.
+// 2025-06-18 spec, and description (to match the MCP registry's server.json),
+// websiteUrl and icons in 2025-11-25; they are sent whenever set, whatever
+// version was negotiated, and clients ignore fields they do not know.
+// Omitted unless set.
 type serverInfo struct {
 	Name        string `json:"name"`
 	Title       string `json:"title,omitempty"`
 	Version     string `json:"version"`
 	Description string `json:"description,omitempty"`
+	WebsiteURL  string `json:"websiteUrl,omitempty"`
+	Icons       []Icon `json:"icons,omitempty"`
 }
 
 type toolDefinition struct {

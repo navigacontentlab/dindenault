@@ -205,6 +205,26 @@ func TestServerWithInfo(t *testing.T) {
 	}, initializeServerInfo(t, server))
 }
 
+func TestServerWithInfo_WebsiteAndIcons(t *testing.T) {
+	server := mcp.NewServer("my-service", "2.1.0", echoTool()).WithInfo(mcp.ServerInfo{
+		WebsiteURL: "https://example.com",
+		Icons: []mcp.Icon{
+			{Src: "https://example.com/icon.png", MimeType: "image/png", Sizes: []string{"256x256"}},
+			{Src: "https://example.com/icon-dark.svg", Theme: "dark"},
+		},
+	})
+
+	assert.Equal(t, map[string]any{
+		"name":       "my-service",
+		"version":    "2.1.0",
+		"websiteUrl": "https://example.com",
+		"icons": []any{
+			map[string]any{"src": "https://example.com/icon.png", "mimeType": "image/png", "sizes": []any{"256x256"}},
+			map[string]any{"src": "https://example.com/icon-dark.svg", "theme": "dark"},
+		},
+	}, initializeServerInfo(t, server))
+}
+
 func TestServerWithInfo_EmptyFieldsKeepWhatNewServerSet(t *testing.T) {
 	server := mcp.NewServer("my-service", "2.1.0", echoTool()).WithInfo(mcp.ServerInfo{Description: "only this"})
 
